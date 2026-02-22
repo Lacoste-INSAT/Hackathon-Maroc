@@ -9,7 +9,7 @@
 
 import { manipulateAsync, SaveFormat } from 'expo-image-manipulator';
 import * as FileSystem from 'expo-file-system';
-import { getInfoAsync, makeDirectoryAsync, moveAsync, documentDirectory } from 'expo-file-system/legacy';
+import { getInfoAsync, makeDirectoryAsync, moveAsync, documentDirectory, readAsStringAsync } from 'expo-file-system/legacy';
 import { COMPRESSION_TARGET_KB } from '@/lib/types';
 
 const MAX_WIDTH = 1600;
@@ -83,7 +83,7 @@ export async function compressImage(originalUri: string): Promise<CompressionRes
  * Read a base64-encoded string from a file URI (for sending to API).
  */
 export async function fileToBase64(uri: string): Promise<string> {
-  return await FileSystem.readAsStringAsync(uri, {
+  return await readAsStringAsync(uri, {
     encoding: 'base64',
   });
 }

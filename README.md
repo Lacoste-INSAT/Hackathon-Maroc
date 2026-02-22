@@ -21,5 +21,8 @@ The system is built on a "Store and Forward" architecture:
 - **Supabase Migrations**: Check the [supabase/migrations](./supabase/migrations) folder for the PostgreSQL schemas.
 - **Plan & Project Progress**: Check [PLAN.md](./PLAN.md) and [implementation_plan.md.resolved](./implementation_plan.md.resolved) for full technical context and decisions.
 
----
-*Built for the JADEITE Program.*
+Tap "Start Session" → Get prompted to scan a Patient QR code.
+Enter the Active Session screen.
+Continually snap photos.
+If online, the AI immediately analyzes the photo and pops up the split-screen Review view for you to verify and approve.
+You decide when to end the session by picking "End Session."

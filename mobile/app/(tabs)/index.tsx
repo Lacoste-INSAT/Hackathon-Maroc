@@ -173,7 +173,7 @@ export default function DashboardScreen() {
       {/* ── Start Session Button ───────────────────────────── */}
       <Button
         onPress={() => {
-          router.push('/capture');
+          router.push('/session/new');
         }}
         variant="primary"
         size="xl"

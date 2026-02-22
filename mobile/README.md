@@ -70,4 +70,8 @@ A resilient, offline-first mobile application designed to securely capture patie
 - `/stores` - Zustand global stores
 
 ---
-*Built for the JADEITE / Snap & Sync workflow.*
+Tap "Start Session" → Get prompted to scan a Patient QR code.
+Enter the Active Session screen.
+Continually snap photos.
+If online, the AI immediately analyzes the photo and pops up the split-screen Review view for you to verify and approve.
+You decide when to end the session by picking "End Session."

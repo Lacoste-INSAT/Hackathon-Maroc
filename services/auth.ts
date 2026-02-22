@@ -106,7 +106,8 @@ export async function getSession(): Promise<Session | null> {
 export async function getCurrentUser(): Promise<User | null> {
   const { data, error } = await supabase.auth.getUser();
   if (error) {
-    console.error('[auth] getUser error:', error.message);
+    // Only warn, as this is expected when testing locally or offline without signIn
+    console.warn('[auth] getUser warning:', error.message);
     return null;
   }
   return data.user;

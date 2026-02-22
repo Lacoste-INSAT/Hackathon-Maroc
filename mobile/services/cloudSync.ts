@@ -13,7 +13,7 @@
 // ─────────────────────────────────────────────────────────────
 
 import * as FileSystem from 'expo-file-system';
-import { getInfoAsync } from 'expo-file-system/legacy';
+import { getInfoAsync, readAsStringAsync } from 'expo-file-system/legacy';
 import { supabase } from '@/lib/supabase';
 import { getDatabase } from './database';
 import { updateRecordStatus } from './recordRepository';
@@ -44,7 +44,7 @@ export async function uploadImage(record: LocalRecord): Promise<void> {
     throw new Error(`[cloudSync] Image file not found: ${imagePath}`);
   }
 
-  const base64 = await FileSystem.readAsStringAsync(imagePath, {
+  const base64 = await readAsStringAsync(imagePath, {
     encoding: 'base64',
   });
 
