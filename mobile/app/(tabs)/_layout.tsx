@@ -2,6 +2,7 @@ import { Tabs } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { View, Text, StyleSheet } from 'react-native';
 import { colors, fontSize, fontWeight } from '@/lib/theme';
+import { useSyncStore } from '@/stores/useSyncStore';
 
 function QueueBadge({ count }: { count: number }) {
   if (count === 0) return null;
@@ -13,8 +14,7 @@ function QueueBadge({ count }: { count: number }) {
 }
 
 export default function TabLayout() {
-  // TODO: Pull queue count from Zustand store
-  const queueCount = 3;
+  const queueCount = useSyncStore((state) => state.pendingCount);
 
   return (
     <Tabs

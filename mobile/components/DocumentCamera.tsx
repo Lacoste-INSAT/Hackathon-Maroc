@@ -18,7 +18,7 @@ import {
 } from 'react-native';
 import { CameraView, useCameraPermissions } from 'expo-camera';
 import * as FileSystem from 'expo-file-system';
-import { getInfoAsync, makeDirectoryAsync, moveAsync } from 'expo-file-system/legacy';
+import { getInfoAsync, makeDirectoryAsync, moveAsync, documentDirectory } from 'expo-file-system/legacy';
 import { Ionicons } from '@expo/vector-icons';
 import { colors, borderRadius, spacing, fontSize, fontWeight, shadow } from '@/lib/theme';
 
@@ -53,7 +53,9 @@ export function DocumentCamera({ isOnline, onCapture, onBack }: DocumentCameraPr
       // ── CRITICAL: Save original to document directory IMMEDIATELY ──
       const timestamp = Date.now();
       const filename = `original_${timestamp}.jpg`;
-      const documentDir = (FileSystem as any).documentDirectory!;
+      const documentDir = typeof documentDirectory === 'string'
+        ? documentDirectory
+        : (FileSystem as any).documentDirectory;
       const permanentPath = `${documentDir}originals/`;
 
       // Ensure directory exists
@@ -113,6 +115,7 @@ export function DocumentCamera({ isOnline, onCapture, onBack }: DocumentCameraPr
           style={StyleSheet.absoluteFill}
           facing="back"
           mode="picture"
+          mute={true}
         />
 
         {/* Document frame overlay */}
