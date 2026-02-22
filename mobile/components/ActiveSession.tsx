@@ -10,14 +10,19 @@ import { Ionicons } from '@expo/vector-icons';
 import { Card, CardContent } from '@/components/ui/Card';
 import { Button } from '@/components/ui/Button';
 import type { Session } from '@/lib/types';
-import { mockExtractData } from '@/lib/mock-data'; // Adjust or mock if needed
+import { useSyncStore } from '@/stores/useSyncStore';
+import { getDatabase } from '@/services/database';
 
 type SessionState = 'overview' | 'camera' | 'analyzing' | 'review';
 
-export default function ActiveSessionScreen() {
-  const { id } = useLocalSearchParams<{ id: string }>();
-  const router = useRouter();
+interface ActiveSessionProps {
+  sessionId: string;
+}
+
+export function ActiveSession({ sessionId }: ActiveSessionProps) {
   const { isOnline } = useNetworkState();
+  const setActiveSessionId = useSyncStore((s) => s.setActiveSessionId);
+  const router = useRouter();
   
   const [session, setSession] = useState<Session | null>(null);
   const [viewState, setViewState] = useState<SessionState>('overview');
@@ -26,14 +31,36 @@ export default function ActiveSessionScreen() {
   const [capturedUri, setCapturedUri] = useState<string | null>(null);
   const [extractedData, setExtractedData] = useState<any>(null);
 
+  const [capturedNotesCount, setCapturedNotesCount] = useState<number>(0);
+
   useEffect(() => {
     async function fetchSession() {
-      if (!id) return;
-      const s = await getSessionById(id);
+      if (!sessionId) return;
+      const s = await getSessionById(sessionId);
       if (s) setSession(s);
     }
     fetchSession();
-  }, [id]);
+  }, [sessionId]);
+
+  // Load notes count
+  useEffect(() => {
+    async function fetchNotesCount() {
+      if (!sessionId) return;
+      try {
+        const db = getDatabase();
+        const row = await db.getFirstAsync<{ count: number }>(
+          `SELECT COUNT(*) as count FROM records WHERE session_id = ?`,
+          [sessionId]
+        );
+        setCapturedNotesCount(row?.count || 0);
+      } catch (err) {
+        console.error(err);
+      }
+    }
+    if (viewState === 'overview') {
+      fetchNotesCount();
+    }
+  }, [sessionId, viewState]);
 
   const handleCapture = async (uri: string) => {
     if (!session) return;
@@ -99,7 +126,8 @@ export default function ActiveSessionScreen() {
           style: 'destructive',
           onPress: async () => {
             await endSession(session.id);
-            router.replace('/(tabs)');
+            setActiveSessionId(null);
+            // Since it's mounted in the home tab, clearing the ID will unmount it
           }
         }
       ]
@@ -147,6 +175,26 @@ export default function ActiveSessionScreen() {
               </View>
             </CardContent>
           </Card>
+
+          {capturedNotesCount > 0 && (
+            <Card style={styles.sessionCard}>
+              <CardContent>
+                <View style={styles.patientInfoRow}>
+                  <View style={[styles.avatar, { backgroundColor: colors.muted }]}>
+                    <Ionicons name="document-text-outline" size={24} color={colors.primary} />
+                  </View>
+                  <View style={{ flex: 1 }}>
+                    <Text style={[styles.patientName, { fontSize: 14 }]}>
+                      {capturedNotesCount} note{capturedNotesCount === 1 ? '' : 's'} captured
+                    </Text>
+                    <Text style={{ fontSize: 12, color: colors.mutedForeground }}>
+                      Saved locally, pending sync
+                    </Text>
+                  </View>
+                </View>
+              </CardContent>
+            </Card>
+          )}
 
           <Text style={styles.hintText}>
             {isOnline 
@@ -280,11 +328,23 @@ export default function ActiveSessionScreen() {
             </View>
           </View>
 
-          <Button variant="primary" size="lg" onPress={handleApproveReview} style={styles.approveButton}>
-            <Ionicons name="checkmark-circle-outline" size={20} color="#fff" /> Approve & Save
+          <Button 
+            variant="primary" 
+            size="lg" 
+            onPress={handleApproveReview} 
+            style={styles.approveButton}
+            icon={<Ionicons name="checkmark-circle-outline" size={20} color="#fff" />}
+          >
+            Approve & Save
           </Button>
-          <Button variant="outline" size="lg" onPress={() => setViewState('camera')} style={styles.retakeButton}>
-            <Ionicons name="refresh-outline" size={20} color={colors.foreground} /> Retake
+          <Button 
+            variant="outline" 
+            size="lg" 
+            onPress={() => setViewState('camera')} 
+            style={styles.retakeButton}
+            icon={<Ionicons name="refresh-outline" size={20} color={colors.foreground} />}
+          >
+            Retake
           </Button>
 
           <View style={{ height: 40 }} />

@@ -22,6 +22,9 @@ interface SyncState {
   /** Last error message, if any */
   lastError: string | null;
 
+  /** Active Session UUID to keep the Home tab in session mode */
+  activeSessionId: string | null;
+
   // ── Actions ─────────────────────────────────────────────
   setPendingCount: (count: number) => void;
   incrementPending: () => void;
@@ -29,6 +32,7 @@ interface SyncState {
   setSyncStatus: (status: SyncStatus) => void;
   setLastSyncAt: (timestamp: string) => void;
   setLastError: (error: string | null) => void;
+  setActiveSessionId: (id: string | null) => void;
   reset: () => void;
 }
 
@@ -38,6 +42,7 @@ export const useSyncStore = create<SyncState>((set) => ({
   syncStatus: 'idle',
   lastSyncAt: null,
   lastError: null,
+  activeSessionId: null,
 
   // ── Actions ───────────────────────────────────────────────
   setPendingCount: (count) =>
@@ -59,6 +64,9 @@ export const useSyncStore = create<SyncState>((set) => ({
 
   setLastError: (error) =>
     set({ lastError: error, syncStatus: error ? 'error' : 'idle' }),
+
+  setActiveSessionId: (id) =>
+    set({ activeSessionId: id }),
 
   reset: () =>
     set({

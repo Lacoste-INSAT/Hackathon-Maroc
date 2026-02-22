@@ -2,11 +2,12 @@ import React, { useState } from 'react';
 import { View, Text, StyleSheet, Alert } from 'react-native';
 import { useRouter } from 'expo-router';
 import { Button } from '@/components/ui/Button';
-import { colors, spacing, borderRadius, fontSize, shadow } from '@/lib/theme';
-import { Ionicons } from '@expo/vector-icons';
 import { createSession } from '@/services/sessionRepository';
 import { getCurrentUser } from '@/services/auth';
 import { Card, CardContent } from '@/components/ui/Card';
+import { useSyncStore } from '@/stores/useSyncStore';
+import { colors, spacing, borderRadius, fontSize, shadow } from '@/lib/theme';
+import { Ionicons } from '@expo/vector-icons';
 
 export default function NewSessionScreen() {
   const router = useRouter();
@@ -27,8 +28,9 @@ export default function NewSessionScreen() {
       // but sessionRepository's createSession handles storing this locally.
       const sessionId = await createSession(mockPatientCode, 'Ahmed Loukil', doctorId);
 
-      // 4. Navigate into the active session
-      router.replace(`/session/${sessionId}`);
+      // 4. Navigate back to dashboard and set the active session
+      useSyncStore.getState().setActiveSessionId(sessionId);
+      router.replace('/(tabs)');
     } catch (error) {
       console.error('[NewSession] Failed to start:', error);
       Alert.alert('Error', 'Could not initialize session.');

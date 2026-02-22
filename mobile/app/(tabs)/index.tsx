@@ -29,6 +29,7 @@ import { useSyncStore } from '@/stores/useSyncStore';
 import { getSessionsByDate } from '@/services/sessionRepository';
 import { getQueueStats } from '@/services/offlineQueue';
 import { getDatabase } from '@/services/database';
+import { ActiveSession } from '@/components/ActiveSession';
 
 // ── Helpers ──────────────────────────────────────────────────
 
@@ -61,6 +62,7 @@ export default function DashboardScreen() {
   const { isOnline } = useNetworkState();
   const pendingCount = useSyncStore((s) => s.pendingCount);
   const syncStatus = useSyncStore((s) => s.syncStatus);
+  const activeSessionId = useSyncStore((s) => s.activeSessionId);
   const lastSyncAt = useSyncStore((s) => s.lastSyncAt);
 
   const [todayPatients, setTodayPatients] = useState<number>(0);
@@ -105,6 +107,10 @@ export default function DashboardScreen() {
   }, [loadStats]);
 
   // ── Render ────────────────────────────────────────────────
+
+  if (activeSessionId) {
+    return <ActiveSession sessionId={activeSessionId} />;
+  }
 
   return (
     <ScrollView
