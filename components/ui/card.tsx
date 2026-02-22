@@ -1,92 +1,99 @@
-import * as React from 'react'
+// ─────────────────────────────────────────────────────────────
+// Snap & Sync — Native Card Component
+// ─────────────────────────────────────────────────────────────
 
-import { cn } from '@/lib/utils'
+import React from 'react';
+import { View, Text, StyleSheet, type StyleProp, type ViewStyle, type TextStyle } from 'react-native';
+import { colors, borderRadius, spacing, shadow, fontSize, fontWeight } from '@/lib/theme';
 
-function Card({ className, ...props }: React.ComponentProps<'div'>) {
+// ── Card ──
+
+interface CardProps {
+  children: React.ReactNode;
+  style?: StyleProp<ViewStyle>;
+  variant?: 'default' | 'success' | 'warning' | 'primary';
+}
+
+export function Card({ children, style, variant = 'default' }: CardProps) {
+  const variantStyle = variantStyles[variant];
   return (
-    <div
-      data-slot="card"
-      className={cn(
-        'bg-card text-card-foreground flex flex-col gap-6 rounded-xl border py-6 shadow-sm',
-        className,
-      )}
-      {...props}
-    />
-  )
+    <View style={[styles.card, variantStyle, style]}>
+      {children}
+    </View>
+  );
 }
 
-function CardHeader({ className, ...props }: React.ComponentProps<'div'>) {
-  return (
-    <div
-      data-slot="card-header"
-      className={cn(
-        '@container/card-header grid auto-rows-min grid-rows-[auto_auto] items-start gap-2 px-6 has-data-[slot=card-action]:grid-cols-[1fr_auto] [.border-b]:pb-6',
-        className,
-      )}
-      {...props}
-    />
-  )
+// ── CardHeader ──
+
+interface CardHeaderProps {
+  children: React.ReactNode;
+  style?: StyleProp<ViewStyle>;
 }
 
-function CardTitle({ className, ...props }: React.ComponentProps<'div'>) {
-  return (
-    <div
-      data-slot="card-title"
-      className={cn('leading-none font-semibold', className)}
-      {...props}
-    />
-  )
+export function CardHeader({ children, style }: CardHeaderProps) {
+  return <View style={[styles.cardHeader, style]}>{children}</View>;
 }
 
-function CardDescription({ className, ...props }: React.ComponentProps<'div'>) {
-  return (
-    <div
-      data-slot="card-description"
-      className={cn('text-muted-foreground text-sm', className)}
-      {...props}
-    />
-  )
+// ── CardTitle ──
+
+interface CardTitleProps {
+  children: React.ReactNode;
+  style?: StyleProp<TextStyle>;
 }
 
-function CardAction({ className, ...props }: React.ComponentProps<'div'>) {
-  return (
-    <div
-      data-slot="card-action"
-      className={cn(
-        'col-start-2 row-span-2 row-start-1 self-start justify-self-end',
-        className,
-      )}
-      {...props}
-    />
-  )
+export function CardTitle({ children, style }: CardTitleProps) {
+  return <Text style={[styles.cardTitle, style]}>{children}</Text>;
 }
 
-function CardContent({ className, ...props }: React.ComponentProps<'div'>) {
-  return (
-    <div
-      data-slot="card-content"
-      className={cn('px-6', className)}
-      {...props}
-    />
-  )
+// ── CardContent ──
+
+interface CardContentProps {
+  children: React.ReactNode;
+  style?: StyleProp<ViewStyle>;
 }
 
-function CardFooter({ className, ...props }: React.ComponentProps<'div'>) {
-  return (
-    <div
-      data-slot="card-footer"
-      className={cn('flex items-center px-6 [.border-t]:pt-6', className)}
-      {...props}
-    />
-  )
+export function CardContent({ children, style }: CardContentProps) {
+  return <View style={[styles.cardContent, style]}>{children}</View>;
 }
 
-export {
-  Card,
-  CardHeader,
-  CardFooter,
-  CardTitle,
-  CardAction,
-  CardDescription,
-  CardContent,
-}
+// ── Styles ──
+
+const styles = StyleSheet.create({
+  card: {
+    backgroundColor: colors.card,
+    borderRadius: borderRadius.lg,
+    borderWidth: 1,
+    borderColor: colors.cardBorder,
+    ...shadow.sm,
+  },
+  cardHeader: {
+    paddingHorizontal: spacing.lg,
+    paddingTop: spacing.lg,
+    paddingBottom: spacing.md,
+  },
+  cardTitle: {
+    fontSize: fontSize.lg,
+    fontWeight: fontWeight.semibold,
+    color: colors.foreground,
+  },
+  cardContent: {
+    paddingHorizontal: spacing.lg,
+    paddingBottom: spacing.lg,
+  },
+});
+
+const variantStyles: Record<string, ViewStyle> = {
+  default: {},
+  success: {
+    borderColor: 'rgba(22,163,74,0.3)',
+    backgroundColor: 'rgba(22,163,74,0.03)',
+  },
+  warning: {
+    borderColor: 'rgba(245,158,11,0.3)',
+    backgroundColor: 'rgba(245,158,11,0.03)',
+  },
+  primary: {
+    borderColor: 'rgba(13,148,136,0.2)',
+    backgroundColor: 'rgba(13,148,136,0.03)',
+  },
+};

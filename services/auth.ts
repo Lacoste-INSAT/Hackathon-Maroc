@@ -5,11 +5,8 @@
 // Wraps Supabase Auth for sign-in, sign-out, and session management.
 // ─────────────────────────────────────────────────────────────
 
-import { supabase } from '../mobile/lib/supabase';
-// Supabase types will be inferred from the client directly to avoid path resolution errors.
-type Session = any;
-type User = any;
-type AuthChangeEvent = string;
+import { supabase } from '@/lib/supabase';
+import type { Session, User, AuthChangeEvent } from '@supabase/supabase-js';
 
 /**
  * Sign in with email and password.
@@ -106,8 +103,9 @@ export async function getSession(): Promise<Session | null> {
 export async function getCurrentUser(): Promise<User | null> {
   const { data, error } = await supabase.auth.getUser();
   if (error) {
-    // Only warn, as this is expected when testing locally or offline without signIn
-    console.warn('[auth] getUser warning:', error.message);
+    if (error.message !== 'Auth session missing!') {
+      console.error('[auth] getUser error:', error.message);
+    }
     return null;
   }
   return data.user;

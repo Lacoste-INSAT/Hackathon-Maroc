@@ -1,21 +1,48 @@
-import * as React from 'react'
+// ─────────────────────────────────────────────────────────────
+// Snap & Sync — Native Input Component
+// ─────────────────────────────────────────────────────────────
 
-import { cn } from '@/lib/utils'
+import React, { forwardRef } from 'react';
+import { TextInput, StyleSheet, type TextInputProps, type ViewStyle } from 'react-native';
+import { colors, borderRadius, spacing, fontSize, fontWeight } from '@/lib/theme';
 
-function Input({ className, type, ...props }: React.ComponentProps<'input'>) {
-  return (
-    <input
-      type={type}
-      data-slot="input"
-      className={cn(
-        'file:text-foreground placeholder:text-muted-foreground selection:bg-primary selection:text-primary-foreground dark:bg-input/30 border-input h-9 w-full min-w-0 rounded-md border bg-transparent px-3 py-1 text-base shadow-xs transition-[color,box-shadow] outline-none file:inline-flex file:h-7 file:border-0 file:bg-transparent file:text-sm file:font-medium disabled:pointer-events-none disabled:cursor-not-allowed disabled:opacity-50 md:text-sm',
-        'focus-visible:border-ring focus-visible:ring-ring/50 focus-visible:ring-[3px]',
-        'aria-invalid:ring-destructive/20 dark:aria-invalid:ring-destructive/40 aria-invalid:border-destructive',
-        className,
-      )}
-      {...props}
-    />
-  )
+export interface InputProps extends TextInputProps {
+  variant?: 'default' | 'warning';
+  containerStyle?: ViewStyle;
 }
 
-export { Input }
+export const Input = forwardRef<TextInput, InputProps>(
+  ({ variant = 'default', containerStyle, style, ...props }, ref) => {
+    return (
+      <TextInput
+        ref={ref}
+        placeholderTextColor={colors.mutedForeground}
+        style={[
+          styles.input,
+          variant === 'warning' && styles.warning,
+          containerStyle,
+          style,
+        ]}
+        {...props}
+      />
+    );
+  }
+);
+
+const styles = StyleSheet.create({
+  input: {
+    height: 44,
+    borderWidth: 1,
+    borderColor: colors.border,
+    borderRadius: borderRadius.sm,
+    paddingHorizontal: spacing.md,
+    fontSize: fontSize.md,
+    fontWeight: fontWeight.medium,
+    color: colors.foreground,
+    backgroundColor: colors.card,
+  },
+  warning: {
+    borderColor: 'rgba(245,158,11,0.5)',
+    backgroundColor: 'rgba(245,158,11,0.03)',
+  },
+});

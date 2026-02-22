@@ -17,14 +17,6 @@ export default function SessionLayout() {
           headerBackTitle: 'Cancel',
         }} 
       />
-      <Stack.Screen 
-        name="[id]" 
-        options={{ 
-          title: 'Active Session',
-          headerBackVisible: false, // Prevent swiping back out of the session accidentally
-          gestureEnabled: false,
-        }} 
-      />
     </Stack>
   );
 }

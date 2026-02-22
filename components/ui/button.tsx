@@ -1,60 +1,128 @@
-import * as React from 'react'
-import { Slot } from '@radix-ui/react-slot'
-import { cva, type VariantProps } from 'class-variance-authority'
+// ─────────────────────────────────────────────────────────────
+// Snap & Sync — Native Button Component
+// ─────────────────────────────────────────────────────────────
 
-import { cn } from '@/lib/utils'
+import React from 'react';
+import {
+  TouchableOpacity,
+  Text,
+  StyleSheet,
+  ActivityIndicator,
+  type ViewStyle,
+  type TextStyle,
+} from 'react-native';
+import { colors, borderRadius, spacing, fontSize, fontWeight, shadow } from '@/lib/theme';
 
-const buttonVariants = cva(
-  "inline-flex items-center justify-center gap-2 whitespace-nowrap rounded-md text-sm font-medium transition-all disabled:pointer-events-none disabled:opacity-50 [&_svg]:pointer-events-none [&_svg:not([class*='size-'])]:size-4 shrink-0 [&_svg]:shrink-0 outline-none focus-visible:border-ring focus-visible:ring-ring/50 focus-visible:ring-[3px] aria-invalid:ring-destructive/20 dark:aria-invalid:ring-destructive/40 aria-invalid:border-destructive",
-  {
-    variants: {
-      variant: {
-        default: 'bg-primary text-primary-foreground hover:bg-primary/90',
-        destructive:
-          'bg-destructive text-white hover:bg-destructive/90 focus-visible:ring-destructive/20 dark:focus-visible:ring-destructive/40 dark:bg-destructive/60',
-        outline:
-          'border bg-background shadow-xs hover:bg-accent hover:text-accent-foreground dark:bg-input/30 dark:border-input dark:hover:bg-input/50',
-        secondary:
-          'bg-secondary text-secondary-foreground hover:bg-secondary/80',
-        ghost:
-          'hover:bg-accent hover:text-accent-foreground dark:hover:bg-accent/50',
-        link: 'text-primary underline-offset-4 hover:underline',
-      },
-      size: {
-        default: 'h-9 px-4 py-2 has-[>svg]:px-3',
-        sm: 'h-8 rounded-md gap-1.5 px-3 has-[>svg]:px-2.5',
-        lg: 'h-10 rounded-md px-6 has-[>svg]:px-4',
-        icon: 'size-9',
-        'icon-sm': 'size-8',
-        'icon-lg': 'size-10',
-      },
-    },
-    defaultVariants: {
-      variant: 'default',
-      size: 'default',
-    },
-  },
-)
+type ButtonVariant = 'primary' | 'outline' | 'ghost' | 'success' | 'destructive';
+type ButtonSize = 'sm' | 'md' | 'lg' | 'xl';
 
-function Button({
-  className,
-  variant,
-  size,
-  asChild = false,
-  ...props
-}: React.ComponentProps<'button'> &
-  VariantProps<typeof buttonVariants> & {
-    asChild?: boolean
-  }) {
-  const Comp = asChild ? Slot : 'button'
-
-  return (
-    <Comp
-      data-slot="button"
-      className={cn(buttonVariants({ variant, size, className }))}
-      {...props}
-    />
-  )
+interface ButtonProps {
+  children: React.ReactNode;
+  onPress: () => void;
+  variant?: ButtonVariant;
+  size?: ButtonSize;
+  disabled?: boolean;
+  loading?: boolean;
+  style?: ViewStyle;
+  textStyle?: TextStyle;
+  icon?: React.ReactNode;
 }
 
-export { Button, buttonVariants }
+export function Button({
+  children,
+  onPress,
+  variant = 'primary',
+  size = 'md',
+  disabled = false,
+  loading = false,
+  style,
+  textStyle,
+  icon,
+}: ButtonProps) {
+  const variantBg = bgVariants[variant];
+  const variantText = textVariants[variant];
+  const sizeStyle = sizeStyles[size];
+  const sizeTextStyle = sizeTextStyles[size];
+
+  return (
+    <TouchableOpacity
+      onPress={onPress}
+      disabled={disabled || loading}
+      activeOpacity={0.8}
+      style={[
+        styles.button,
+        sizeStyle,
+        variantBg,
+        disabled && styles.disabled,
+        variant === 'primary' && shadow.md,
+        style,
+      ]}
+    >
+      {loading ? (
+        <ActivityIndicator
+          size="small"
+          color={variant === 'outline' || variant === 'ghost' ? colors.primary : colors.primaryForeground}
+        />
+      ) : (
+        <>
+          {icon}
+          {typeof children === 'string' ? (
+            <Text
+              style={[styles.buttonText, sizeTextStyle, variantText, textStyle]}
+            >
+              {children}
+            </Text>
+          ) : (
+            children
+          )}
+        </>
+      )}
+    </TouchableOpacity>
+  );
+}
+
+const styles = StyleSheet.create({
+  button: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: spacing.sm,
+    borderRadius: borderRadius.md,
+  },
+  buttonText: {
+    fontWeight: fontWeight.semibold,
+  },
+  disabled: {
+    opacity: 0.5,
+  },
+});
+
+const sizeStyles: Record<ButtonSize, ViewStyle> = {
+  sm: { height: 36, paddingHorizontal: spacing.md },
+  md: { height: 44, paddingHorizontal: spacing.lg },
+  lg: { height: 52, paddingHorizontal: spacing.xl },
+  xl: { height: 60, paddingHorizontal: spacing.xxl, borderRadius: borderRadius.lg },
+};
+
+const sizeTextStyles: Record<ButtonSize, TextStyle> = {
+  sm: { fontSize: fontSize.sm },
+  md: { fontSize: fontSize.md },
+  lg: { fontSize: fontSize.lg },
+  xl: { fontSize: fontSize.xl },
+};
+
+const bgVariants: Record<ButtonVariant, ViewStyle> = {
+  primary: { backgroundColor: colors.primary },
+  outline: { backgroundColor: 'transparent', borderWidth: 1, borderColor: colors.border },
+  ghost: { backgroundColor: 'transparent' },
+  success: { backgroundColor: colors.success },
+  destructive: { backgroundColor: colors.destructive },
+};
+
+const textVariants: Record<ButtonVariant, TextStyle> = {
+  primary: { color: colors.primaryForeground },
+  outline: { color: colors.foreground },
+  ghost: { color: colors.primary },
+  success: { color: colors.successForeground },
+  destructive: { color: colors.destructiveForeground },
+};
