@@ -57,13 +57,23 @@ RULES:
 - For partially legible text, include your best guess with appropriate confidence
 - Respond with ONLY the JSON object`;
 
+const corsHeaders = {
+  'Access-Control-Allow-Origin': '*',
+  'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
+};
+
 serve(async (req: Request) => {
+  // ── Handle CORS Preflight ──
+  if (req.method === 'OPTIONS') {
+    return new Response('ok', { headers: corsHeaders });
+  }
+
   try {
     // ── Validate request ──
     if (req.method !== 'POST') {
       return new Response(JSON.stringify({ error: 'Method not allowed' }), {
         status: 405,
-        headers: { 'Content-Type': 'application/json' },
+        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
       });
     }
 
@@ -72,14 +82,14 @@ serve(async (req: Request) => {
     if (!record_id) {
       return new Response(
         JSON.stringify({ error: 'record_id is required' }),
-        { status: 400, headers: { 'Content-Type': 'application/json' } }
+        { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
       );
     }
 
     if (!GEMINI_API_KEY) {
       return new Response(
         JSON.stringify({ error: 'GEMINI_API_KEY not configured' }),
-        { status: 500, headers: { 'Content-Type': 'application/json' } }
+        { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
       );
     }
 
@@ -98,7 +108,7 @@ serve(async (req: Request) => {
     if (recordError || !record) {
       return new Response(
         JSON.stringify({ error: `Record not found: ${record_id}` }),
-        { status: 404, headers: { 'Content-Type': 'application/json' } }
+        { status: 404, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
       );
     }
 
@@ -110,7 +120,7 @@ serve(async (req: Request) => {
     if (!storagePath) {
       return new Response(
         JSON.stringify({ error: 'No compressed image path for this record' }),
-        { status: 400, headers: { 'Content-Type': 'application/json' } }
+        { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
       );
     }
 
@@ -124,7 +134,7 @@ serve(async (req: Request) => {
           error: 'Failed to download image from storage',
           details: downloadError?.message,
         }),
-        { status: 500, headers: { 'Content-Type': 'application/json' } }
+        { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
       );
     }
 
@@ -170,7 +180,7 @@ serve(async (req: Request) => {
 
     if (!geminiResponse.ok) {
       const errorText = await geminiResponse.text();
-      console.error('[extract-handwriting] Gemini error:', errorText);
+      console.error('[extract-handwriting] Gemini API HTTP error:', errorText);
 
       // Mark the record as needing manual review
       await supabase
@@ -183,7 +193,7 @@ serve(async (req: Request) => {
 
       return new Response(
         JSON.stringify({ error: 'Gemini API error', details: errorText }),
-        { status: 502, headers: { 'Content-Type': 'application/json' } }
+        { status: 502, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
       );
     }
 
@@ -207,7 +217,7 @@ serve(async (req: Request) => {
 
       return new Response(
         JSON.stringify({ error: 'Failed to parse Gemini response' }),
-        { status: 500, headers: { 'Content-Type': 'application/json' } }
+        { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
       );
     }
 
@@ -242,7 +252,7 @@ serve(async (req: Request) => {
       console.error('[extract-handwriting] Update error:', updateError);
       return new Response(
         JSON.stringify({ error: 'Failed to update record', details: updateError.message }),
-        { status: 500, headers: { 'Content-Type': 'application/json' } }
+        { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
       );
     }
 
@@ -259,7 +269,7 @@ serve(async (req: Request) => {
         status: isAutoApproved ? 'approved' : 'needs_review',
         overallConfidence,
       }),
-      { status: 200, headers: { 'Content-Type': 'application/json' } }
+      { status: 200, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
     );
   } catch (error) {
     console.error('[extract-handwriting] Error:', error);
@@ -269,7 +279,7 @@ serve(async (req: Request) => {
 
     return new Response(
       JSON.stringify({ error: message }),
-      { status, headers: { 'Content-Type': 'application/json' } }
+      { status, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
     );
   }
 });

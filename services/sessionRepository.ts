@@ -34,7 +34,8 @@ export async function createSession(
 export async function getActiveSession(): Promise<Session | null> {
   const db = getDatabase();
   const row = await db.getFirstAsync<Session>(
-    `SELECT * FROM sessions WHERE status = 'active' ORDER BY started_at DESC LIMIT 1`
+    `SELECT * FROM sessions WHERE status = 'active' ORDER BY started_at DESC LIMIT 1`,
+    []
   );
   return row ?? null;
 }
@@ -81,7 +82,8 @@ export async function markSessionSynced(sessionId: string): Promise<void> {
 export async function getUnsyncedSessions(): Promise<Session[]> {
   const db = getDatabase();
   return db.getAllAsync<Session>(
-    `SELECT * FROM sessions WHERE synced = 0 ORDER BY started_at ASC`
+    `SELECT * FROM sessions WHERE synced = 0 ORDER BY started_at ASC`,
+    []
   );
 }
 

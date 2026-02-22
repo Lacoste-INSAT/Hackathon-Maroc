@@ -28,6 +28,7 @@ SplashScreen.preventAutoHideAsync();
 
 import { NetworkProvider } from '@/contexts/NetworkContext';
 import { initDatabase } from '@/services/database';
+import { ensureSession } from '@/services/auth';
 import { startSyncWorker } from '@/services/backgroundSync';
 import { getQueueStats } from '@/services/offlineQueue';
 import { useSyncStore } from '@/stores/useSyncStore';
@@ -38,9 +39,11 @@ export default function RootLayout() {
   const [initError, setInitError] = useState<string | null>(null);
   const stopWorkerRef = useRef<(() => void) | null>(null);
 
-  // ── Step 1: Initialize SQLite ──────────────────────────────
+  // ── Step 1: Initialize SQLite & Auth ───────────────────────
   const initializeApp = useCallback(async () => {
     try {
+      await ensureSession();
+      console.log('[RootLayout] Auth session ensured');
       await initDatabase();
       setIsDbReady(true);
       console.log('[RootLayout] Database initialized');

@@ -112,6 +112,33 @@ export async function getCurrentUser(): Promise<User | null> {
 }
 
 /**
+ * Signs in anonymously to obtain a valid session without user credentials.
+ */
+export async function signInAnonymously(): Promise<Session> {
+  const { data, error } = await supabase.auth.signInAnonymously();
+  if (error) {
+    throw new Error(`[auth] Anonymous sign-in failed: ${error.message}`);
+  }
+  if (!data.session) {
+    throw new Error('[auth] Anonymous sign-in returned no session');
+  }
+  return data.session;
+}
+
+/**
+ * Ensures a session exists. If not, signs in anonymously.
+ * Call this on app startup.
+ */
+export async function ensureSession(): Promise<Session> {
+  const session = await getSession();
+  if (session) {
+    return session;
+  }
+  console.log('[auth] No session found, signing in anonymously...');
+  return await signInAnonymously();
+}
+
+/**
  * Subscribe to auth state changes (sign-in, sign-out, token refresh).
  * Returns an unsubscribe function.
  *

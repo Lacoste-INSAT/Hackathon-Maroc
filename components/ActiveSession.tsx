@@ -5,6 +5,8 @@ import { DocumentCamera } from '@/components/DocumentCamera';
 import { useNetworkState } from '@/hooks/useNetworkState';
 import { getSessionById, endSession } from '@/services/sessionRepository';
 import { enqueuePhoto } from '@/services/offlineQueue';
+import { updateRecordExtraction } from '@/services/recordRepository';
+import { extractHandwritingFromBase64 } from '@/services/geminiService';
 import { colors, spacing, borderRadius, fontSize, shadow } from '@/lib/theme';
 import { Ionicons } from '@expo/vector-icons';
 import { Card, CardContent } from '@/components/ui/Card';
@@ -54,7 +56,7 @@ export function ActiveSession({ sessionId }: ActiveSessionProps) {
         );
         setCapturedNotesCount(row?.count || 0);
       } catch (err) {
-        console.error(err);
+        console.error('[ActiveSession] Failed to fetch notes count:', err);
       }
     }
     if (viewState === 'overview') {
@@ -67,50 +69,60 @@ export function ActiveSession({ sessionId }: ActiveSessionProps) {
     setCapturedUri(uri);
     
     if (isOnline) {
-      // Flow for online: Go to analyzing -> review
       setViewState('analyzing');
       
-      // MOCK AI Extraction Delay
-      setTimeout(() => {
-        setExtractedData({
-          symptoms: 'Fever, Cough, Fatigue',
-          diagnosis: 'Upper Respiratory Infection',
-          medication: 'Amoxicillin 500mg, 2x/day',
-          confidence: 94,
-          accuracy: 92
-        });
-        setViewState('review');
-      }, 2000);
-
-    } else {
-      // Flow for offline: Enqueue and return to overview
       try {
-        await enqueuePhoto(session.id, uri);
-        Alert.alert('Success', 'Document queued for offline sync.', [{ text: 'OK' }]);
-        setViewState('overview');
+        const result = await extractHandwritingFromBase64(uri);
+        setExtractedData(result);
+        setViewState('review');
       } catch (error) {
-         console.error('[ActiveSession] Error saving capture:', error);
-         Alert.alert('Error', 'Failed to save the captured document.');
-         setViewState('overview');
+        console.error('[ActiveSession] AI Extraction failed:', error);
+        Alert.alert('AI Error', 'Failed to extract text. The photo will be queued for later.', [
+          { text: 'OK', onPress: async () => {
+             // Fallback to offline queue
+             await handleOfflineEnqueue(uri);
+          }}
+        ]);
       }
+    } else {
+      await handleOfflineEnqueue(uri);
+    }
+  };
+
+  const handleOfflineEnqueue = async (uri: string) => {
+    if (!session) return;
+    try {
+      await enqueuePhoto(session.id, uri);
+      Alert.alert('Success', 'Document queued for offline sync.', [{ text: 'OK' }]);
+      setViewState('overview');
+    } catch (error) {
+       console.error('[ActiveSession] Error saving capture:', error);
+       Alert.alert('Error', 'Failed to save the captured document.');
+       setViewState('overview');
     }
   };
 
   const handleApproveReview = async () => {
-    if (!session || !capturedUri) return;
+    if (!session || !capturedUri || !extractedData) return;
     try {
-      // In a real flow, you might want to save the extracted data directly to SQLite as 'approved' 
-      // instead of putting it in 'pending_sync' and relying purely on background sync. 
-      // For now, enqueue it with the photo so cloudSync can pick it up.
-      await enqueuePhoto(session.id, capturedUri);
+      // 1. Create the record and get ID
+      const recordId = await enqueuePhoto(session.id, capturedUri);
       
+      // 2. Immediately update the record with the extracted JSON so sync_worker 
+      //    just uploads it as-is.
+      await updateRecordExtraction(
+        recordId,
+        JSON.stringify(extractedData),
+        extractedData.overallConfidence // Use extracted confidence
+      );
+
       Alert.alert('Saved', 'Record approved and saved to system.');
       setViewState('overview');
       setCapturedUri(null);
       setExtractedData(null);
     } catch (err) {
-      console.error(err);
-      Alert.alert('Error', 'Failed to save reviewed record.');
+      console.error('[ActiveSession] Approve review failed:', err);
+      Alert.alert('Error', `Failed to save reviewed record: ${err instanceof Error ? err.message : String(err)}`);
     }
   };
 
@@ -287,46 +299,27 @@ export function ActiveSession({ sessionId }: ActiveSessionProps) {
           <View style={styles.metricsRow}>
             <View style={styles.metricBadge}>
               <Ionicons name="checkmark-circle-outline" size={16} color={colors.primary} />
-              <Text style={styles.metricText}>Confidence: {extractedData?.confidence}%</Text>
+              <Text style={styles.metricText}>Confidence: {extractedData?.overallConfidence}%</Text>
             </View>
             <View style={styles.metricBadge}>
               <Ionicons name="speedometer-outline" size={16} color={colors.primary} />
-              <Text style={styles.metricText}>Accuracy: {extractedData?.accuracy}%</Text>
+              <Text style={styles.metricText}>Accuracy: {extractedData?.predictionScore}%</Text>
             </View>
           </View>
 
           <Text style={styles.sectionHeading}>GEMINI PREDICTIONS - TAP TO EDIT</Text>
           
-          {/* Simulated editable fields for visual matching */}
-          <View style={styles.fieldBox}>
-            <View style={styles.fieldHeader}>
-              <Text style={styles.fieldLabel}>Symptoms</Text>
-              <Text style={styles.fieldScore}>94%</Text>
+          {extractedData?.fields?.map((field: any, idx: number) => (
+            <View key={field.label || idx} style={styles.fieldBox}>
+              <View style={styles.fieldHeader}>
+                <Text style={styles.fieldLabel}>{field.label}</Text>
+                <Text style={styles.fieldScore}>{field.confidence}%</Text>
+              </View>
+              <View style={styles.inputMock}>
+                <Text style={styles.inputText}>{field.value}</Text>
+              </View>
             </View>
-            <View style={styles.inputMock}>
-              <Text style={styles.inputText}>{extractedData?.symptoms}</Text>
-            </View>
-          </View>
-          
-          <View style={styles.fieldBox}>
-            <View style={styles.fieldHeader}>
-              <Text style={styles.fieldLabel}>Diagnosis</Text>
-              <Text style={styles.fieldScore}>91%</Text>
-            </View>
-            <View style={styles.inputMock}>
-              <Text style={styles.inputText}>{extractedData?.diagnosis}</Text>
-            </View>
-          </View>
-
-          <View style={styles.fieldBox}>
-            <View style={styles.fieldHeader}>
-              <Text style={styles.fieldLabel}>Medication</Text>
-              <Text style={styles.fieldScore}>96%</Text>
-            </View>
-            <View style={styles.inputMock}>
-              <Text style={styles.inputText}>{extractedData?.medication}</Text>
-            </View>
-          </View>
+          ))}
 
           <Button 
             variant="primary" 

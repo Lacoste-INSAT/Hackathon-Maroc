@@ -2,82 +2,136 @@
 // Snap & Sync — Cloud Sync Service
 // ─────────────────────────────────────────────────────────────
 //
+// LINEAR API-STYLE REWRITE
+//
 // Handles the actual upload to Supabase Storage and PostgreSQL
 // upserts. Called by the background sync worker.
 //
 // Key design decisions:
-//   • Sequential processing (not parallel) — essential for
-//     weak 3G connections in rural clinics
-//   • Max 5 retries per item, then marked 'failed'
-//   • Compressed image uploaded, original stays local
+//   • Sequential processing
+//   • Auto-creates patient if missing (Hackathon Bypass)
+//   • Linear steps for easy debugging
 // ─────────────────────────────────────────────────────────────
 
 import * as FileSystem from 'expo-file-system';
 import { getInfoAsync, readAsStringAsync } from 'expo-file-system/legacy';
 import { supabase } from '@/lib/supabase';
 import { getDatabase } from './database';
-import { updateRecordStatus } from './recordRepository';
-import { updateQueueItemStatus, getQueueItems } from './offlineQueue';
+import { getSessionById } from './sessionRepository';
+import { getRecordById, updateRecordStatus } from './recordRepository';
+import { updateQueueItemStatus, getQueueItems, retryFailedItem } from './offlineQueue';
 import { getCurrentUser } from './auth';
 import { useSyncStore } from '@/stores/useSyncStore';
 import type { Record as LocalRecord, SyncQueueItem, SyncResult } from '@/lib/types';
+import 'react-native-get-random-values';
+import { v4 as uuidv4 } from 'uuid';
 
 const MAX_RETRIES = 5;
 
 /**
- * Uploads a single record's compressed image to Supabase Storage,
- * then upserts the record row in PostgreSQL.
- *
- * Storage path: scan-images/{doctor_id}/{session_id}/{record_id}.jpg
+ * Step A: Ensure patient exists on Supabase.
+ * If not, auto-creates a patient using the code as ID/name to unblock the queue!
  */
-export async function uploadImage(record: LocalRecord): Promise<void> {
-  // MOCK: Bypass strict auth for testing the pipeline if no user is signed in.
-  const user = await getCurrentUser();
-  const userId = user?.id || 'doc-123'; 
+async function ensurePatientExists(patientCode: string): Promise<string> {
+  // 1. Check if patient exists
+  const { data: patient, error: lookupError } = await supabase
+    .from('patients')
+    .select('id')
+    .eq('patient_code', patientCode)
+    .single();
 
+  if (!lookupError && patient) {
+    return patient.id; // Patient exists, return ID
+  }
+
+  // 2. Patient doesn't exist! (Hackathon bypass: Auto-create)
+  console.warn(`[cloudSync] Patient code ${patientCode} not found in cloud! AUTO-CREATING...`);
+  
+  const newPatientId = uuidv4();
+  
+  const { error: insertError } = await supabase
+    .from('patients')
+    .insert({
+      id: newPatientId,
+      patient_code: patientCode,
+      full_name: `Hackathon Auto-Patient (${patientCode})`, // default name
+      date_of_birth: null,
+      gender: null,
+    });
+
+  if (insertError) {
+    throw new Error(`[cloudSync] Step A Failed: Could not auto-create patient: ${insertError.message}`);
+  }
+
+  return newPatientId;
+}
+
+/**
+ * Step B: Insert the Session into Supabase
+ */
+async function insertSession(session: any, patientId: string): Promise<void> {
+  const { error } = await supabase
+    .from('sessions')
+    .upsert({
+      id: session.id,
+      patient_id: patientId,
+      doctor_id: session.doctor_id,
+      started_at: session.started_at,
+      ended_at: session.ended_at,
+      status: session.status,
+    });
+
+  if (error) {
+    throw new Error(`[cloudSync] Step B Failed: Session upsert failed: ${error.message}`);
+  }
+}
+
+/**
+ * Step C: Upload the Image to scan-images bucket
+ */
+async function uploadToStorage(record: LocalRecord, userId: string): Promise<string> {
   const imagePath = record.compressed_image_path ?? record.original_image_path;
   const storagePath = `${userId}/${record.session_id}/${record.id}.jpg`;
 
-  // ── Step 1: Read the image file as base64 ─────────────────
   const fileInfo = await getInfoAsync(imagePath);
   if (!fileInfo.exists) {
-    throw new Error(`[cloudSync] Image file not found: ${imagePath}`);
+    throw new Error(`[cloudSync] Step C Failed: Image file not found: ${imagePath}`);
   }
 
-  const base64 = await readAsStringAsync(imagePath, {
-    encoding: 'base64',
-  });
-
-  // Convert base64 to Uint8Array for Supabase upload
+  const base64 = await readAsStringAsync(imagePath, { encoding: 'base64' });
   const binaryString = atob(base64);
   const bytes = new Uint8Array(binaryString.length);
   for (let i = 0; i < binaryString.length; i++) {
     bytes[i] = binaryString.charCodeAt(i);
   }
 
-  // ── Step 2: Upload to Supabase Storage ────────────────────
   const { error: uploadError } = await supabase.storage
     .from('scan-images')
     .upload(storagePath, bytes, {
       contentType: 'image/jpeg',
-      upsert: true,             // overwrite if exists (retry case)
+      upsert: true,
     });
 
   if (uploadError) {
     if (uploadError.message.includes('Bucket not found')) {
-       throw new Error(`[cloudSync] The Supabase storage bucket 'scan-images' does not exist. Please create a public bucket named 'scan-images' in the Supabase Dashboard before syncing.`);
+       throw new Error(`[cloudSync] Step C Failed: The Supabase storage bucket 'scan-images' does not exist.`);
     }
-    throw new Error(`[cloudSync] Storage upload failed: ${uploadError.message}`);
+    throw new Error(`[cloudSync] Step C Failed: Storage upload failed: ${uploadError.message}`);
   }
 
-  // Get the public URL for the uploaded image
+  return storagePath;
+}
+
+/**
+ * Step D: Get Public URL and upsert Record
+ */
+async function upsertRecord(record: LocalRecord, storagePath: string): Promise<string> {
   const { data: urlData } = supabase.storage
     .from('scan-images')
     .getPublicUrl(storagePath);
 
   const imageUrl = urlData?.publicUrl ?? storagePath;
 
-  // ── Step 3: Upsert record in Supabase PostgreSQL ──────────
   const { error: dbError } = await supabase
     .from('records')
     .upsert({
@@ -90,69 +144,68 @@ export async function uploadImage(record: LocalRecord): Promise<void> {
     });
 
   if (dbError) {
-    throw new Error(`[cloudSync] DB upsert failed: ${dbError.message}`);
+    throw new Error(`[cloudSync] Step D Failed: Record DB upsert failed: ${dbError.message}`);
   }
 
-  // ── Step 4: Update local SQLite status ────────────────────
-  const syncedAt = new Date().toISOString();
-  await updateRecordStatus(record.id, 'pending_extraction', syncedAt);
+  console.log(`[cloudSync] Record ${record.id} synced successfully (AI handled on client).`);
+
+  return record.id;
 }
 
+
 /**
- * Syncs a local session to Supabase PostgreSQL.
- * Requires the patient to exist in the cloud patients table.
+ * Processes a single pending item from start to finish
  */
-export async function upsertSession(localSession: {
-  id: string;
-  patient_code: string;
-  patient_name: string | null;
-  doctor_id: string;
-  started_at: string;
-  ended_at: string | null;
-  status: string;
-}): Promise<void> {
-  // Look up the patient UUID from patient_code
-  let patientId = null;
-  const { data: patient, error: lookupError } = await supabase
-    .from('patients')
-    .select('id')
-    .eq('patient_code', localSession.patient_code)
-    .single();
+async function processItem(item: SyncQueueItem, db: any): Promise<void> {
+  console.log(`[cloudSync] Processing queue item ${item.id} (Action: ${item.action})`);
 
-  if (lookupError || !patient) {
-     console.warn(`[cloudSync] Patient not found in cloud, using mock UUID`);
-     patientId = 'f47ac10b-58cc-4372-a567-0e02b2c3d479'; // mock UUID
-  } else {
-     patientId = patient.id;
+  if (item.action !== 'upload_image') {
+    return; // Ignore other action types for now if any
   }
 
-  const { error } = await supabase
-    .from('sessions')
-    .upsert({
-      id: localSession.id,
-      patient_id: patientId,
-      doctor_id: localSession.doctor_id,
-      started_at: localSession.started_at,
-      ended_at: localSession.ended_at,
-      status: localSession.status,
-    });
+  // 0. Initial Setup
+  const user = await getCurrentUser();
+  if (!user) throw new Error('[cloudSync] User not authenticated during sync');
 
-  if (error) {
-    throw new Error(`[cloudSync] Session upsert failed: ${error.message}`);
+  const record = await db.getFirstAsync(
+    'SELECT * FROM records WHERE id = ?',
+    [item.record_id]
+  ) as LocalRecord | null;
+
+  if (!record) {
+    throw new Error(`[cloudSync] Record ${item.record_id} not found in local DB`);
   }
+
+  const session = await db.getFirstAsync(
+    'SELECT * FROM sessions WHERE id = ?',
+    [record.session_id]
+  );
+  
+  if (!session) {
+    throw new Error(`[cloudSync] Session ${record.session_id} not found locally!`);
+  }
+
+  // ── THE PIPELINE ──
+
+  // Step A: Ensure patient exists
+  const patientId = await ensurePatientExists(session.patient_code);
+
+  // Step B: Insert Session
+  await insertSession(session, patientId);
+  await db.runAsync('UPDATE sessions SET synced = 1 WHERE id = ?', [session.id]);
+
+  // Step C: Upload Image to Storage
+  const storagePath = await uploadToStorage(record, user.id);
+
+  // Step D: Get Public URL and upsert Record
+  await upsertRecord(record, storagePath);
+  await updateRecordStatus(record.id, 'approved', new Date().toISOString());
 }
 
+
 /**
+ * Main Entry Point:
  * Processes all pending items in the sync queue — SEQUENTIALLY.
- *
- * Sequential processing is critical for rural clinics on weak 3G:
- * if you fire 10 uploads in parallel on a bad connection, they
- * all fail. One at a time ensures some data gets through.
- *
- * Retry logic: increment retry_count on failure, max 5 attempts.
- * After 5 failures, the item is marked 'failed' and skipped.
- *
- * @returns { synced, failed } counts
  */
 export async function syncAllPending(): Promise<SyncResult> {
   const store = useSyncStore.getState();
@@ -174,25 +227,10 @@ export async function syncAllPending(): Promise<SyncResult> {
     // Process each item ONE AT A TIME
     for (const item of pendingItems) {
       try {
-        // Mark as in_progress
         await updateQueueItemStatus(item.id, 'in_progress');
 
-        if (item.action === 'upload_image') {
-          // Fetch the full record from SQLite
-          const record = await db.getFirstAsync<LocalRecord>(
-            'SELECT * FROM records WHERE id = ?',
-            [item.record_id]
-          );
-
-          if (!record) {
-            console.warn(`[cloudSync] Record ${item.record_id} not found, marking failed`);
-            await updateQueueItemStatus(item.id, 'failed', item.retry_count);
-            failed++;
-            continue;
-          }
-
-          await uploadImage(record);
-        }
+        // 🔥 Execute the linear pipeline
+        await processItem(item, db);
 
         // Success — mark as completed
         await updateQueueItemStatus(item.id, 'completed');
@@ -203,26 +241,19 @@ export async function syncAllPending(): Promise<SyncResult> {
         const newRetryCount = item.retry_count + 1;
         const errorMsg = error instanceof Error ? error.message : String(error);
 
-        console.error(
-          `[cloudSync] Failed item ${item.id} (attempt ${newRetryCount}/${MAX_RETRIES}):`,
-          errorMsg
-        );
+        console.error(`[cloudSync] Failed item ${item.id} (attempt ${newRetryCount}/${MAX_RETRIES}):`, errorMsg);
 
         if (newRetryCount >= MAX_RETRIES) {
-          // Max retries exceeded — mark as permanently failed
-          await updateQueueItemStatus(item.id, 'failed', newRetryCount);
-          failed++;
-          console.error(
-            `[cloudSync] Item ${item.id} permanently failed after ${MAX_RETRIES} attempts`
-          );
+           await updateQueueItemStatus(item.id, 'failed', newRetryCount);
+           failed++;
+           console.error(`[cloudSync] Item ${item.id} permanently failed.`);
         } else {
-          // Revert to pending with incremented retry count
-          await updateQueueItemStatus(item.id, 'pending', newRetryCount);
+           await updateQueueItemStatus(item.id, 'pending', newRetryCount);
         }
       }
     }
 
-    // Update final status
+    // Wrap up
     if (failed > 0 && synced === 0) {
       store.setLastError(`All ${failed} items failed to sync`);
     } else {

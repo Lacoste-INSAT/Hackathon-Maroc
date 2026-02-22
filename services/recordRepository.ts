@@ -47,7 +47,8 @@ export async function getRecordsBySession(sessionId: string): Promise<Record[]> 
 export async function getPendingSyncRecords(): Promise<Record[]> {
   const db = getDatabase();
   return db.getAllAsync<Record>(
-    `SELECT * FROM records WHERE status = 'pending_sync' ORDER BY created_at ASC`
+    `SELECT * FROM records WHERE status = 'pending_sync' ORDER BY created_at ASC`,
+    []
   );
 }
 
@@ -57,7 +58,8 @@ export async function getPendingSyncRecords(): Promise<Record[]> {
 export async function getNeedsReviewRecords(): Promise<Record[]> {
   const db = getDatabase();
   return db.getAllAsync<Record>(
-    `SELECT * FROM records WHERE status = 'needs_review' ORDER BY created_at ASC`
+    `SELECT * FROM records WHERE status = 'needs_review' ORDER BY created_at ASC`,
+    []
   );
 }
 
@@ -104,13 +106,11 @@ export async function updateRecordExtraction(
      SET extracted_data = ?, overall_confidence = ?, status = ?,
          flagged_reason = ?
      WHERE id = ?`,
-    [
-      extractedData,
-      overallConfidence,
-      status,
-      flaggedReason ?? null,
-      recordId,
-    ]
+    [extractedData,
+    overallConfidence,
+    status,
+    flaggedReason ?? null,
+    recordId]
   );
 }
 

@@ -46,6 +46,11 @@ export async function enqueuePhoto(
     [recordId]
   );
 
+  // Step 3: Trigger background worker to pick it up immediately
+  // If offline, the worker will gracefully abort. If online, it syncs.
+  const { debouncedSync } = require('./backgroundSync');
+  debouncedSync();
+
   return recordId;
 }
 
@@ -56,7 +61,8 @@ export async function getQueueStats(): Promise<QueueStats> {
   const db = getDatabase();
 
   const countRow = await db.getFirstAsync<{ count: number }>(
-    `SELECT COUNT(*) as count FROM sync_queue WHERE status IN ('pending', 'in_progress')`
+    `SELECT COUNT(*) as count FROM sync_queue WHERE status IN ('pending', 'in_progress')`,
+    []
   );
 
   // Estimate total size from compressed images (if available) or originals
@@ -80,7 +86,8 @@ export async function getQueueItems(): Promise<SyncQueueItem[]> {
   return db.getAllAsync<SyncQueueItem>(
     `SELECT * FROM sync_queue
      WHERE status IN ('pending', 'in_progress')
-     ORDER BY id ASC`
+     ORDER BY id ASC`,
+    []
   );
 }
 
@@ -90,7 +97,8 @@ export async function getQueueItems(): Promise<SyncQueueItem[]> {
 export async function getFailedItems(): Promise<SyncQueueItem[]> {
   const db = getDatabase();
   return db.getAllAsync<SyncQueueItem>(
-    `SELECT * FROM sync_queue WHERE status = 'failed' ORDER BY id ASC`
+    `SELECT * FROM sync_queue WHERE status = 'failed' ORDER BY id ASC`,
+    []
   );
 }
 

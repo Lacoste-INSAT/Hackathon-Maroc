@@ -169,6 +169,7 @@ export async function registerPatient(
 export async function getUnsyncedPatients(): Promise<Patient[]> {
   const db = getDatabase();
   return db.getAllAsync<Patient>(
-    'SELECT * FROM patients WHERE synced = 0 ORDER BY full_name ASC'
+    'SELECT * FROM patients WHERE synced = 0 ORDER BY full_name ASC',
+    []
   );
 }

@@ -86,7 +86,8 @@ export default function DashboardScreen() {
       // Average AI confidence from all records with a confidence value
       const db = getDatabase();
       const row = await db.getFirstAsync<{ avg: number | null }>(
-        `SELECT AVG(overall_confidence) as avg FROM records WHERE overall_confidence IS NOT NULL`
+        `SELECT AVG(overall_confidence) as avg FROM records WHERE overall_confidence IS NOT NULL`,
+        []
       );
       setAvgConfidence(row?.avg ? Math.round(row.avg) : 0);
     } catch (err) {

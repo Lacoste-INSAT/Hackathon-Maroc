@@ -10,7 +10,9 @@ import {
   FlatList,
   RefreshControl,
   ActivityIndicator,
+  TouchableOpacity,
 } from 'react-native';
+import { useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import {
   colors,
@@ -113,11 +115,12 @@ async function fetchHistory(): Promise<HistoryEntry[]> {
      FROM records r
      JOIN sessions s ON r.session_id = s.id
      ORDER BY r.created_at DESC
-     LIMIT 100`
+     LIMIT 100`,
+    []
   );
 
-  return rows.map((row, idx) => ({
-    id: idx,
+  return rows.map((row) => ({
+    id: row.id,
     patient: row.patient_name ?? row.patient_code,
     patientId: row.patient_code,
     time: formatTime(row.created_at),
@@ -148,6 +151,7 @@ export default function HistoryScreen() {
   const [entries, setEntries] = useState<HistoryEntry[]>([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
+  const router = useRouter();
 
   const loadHistory = useCallback(async () => {
     try {
@@ -180,62 +184,69 @@ export default function HistoryScreen() {
       const confBg = getConfidenceBg(item.confidence);
 
       return (
-        <Card style={styles.listItem}>
-          <CardContent style={styles.listItemContent}>
-            {/* Patient avatar */}
-            <View style={styles.avatar}>
-              <Text style={styles.avatarText}>
-                {getInitials(item.patient)}
-              </Text>
-            </View>
-
-            {/* Patient info */}
-            <View style={styles.patientInfo}>
-              <Text style={styles.patientName} numberOfLines={1}>
-                {item.patient}
-              </Text>
-              <View style={styles.metaRow}>
-                <Ionicons
-                  name="time-outline"
-                  size={12}
-                  color={colors.mutedForeground}
-                />
-                <Text style={styles.metaText}>{item.time}</Text>
-                <Text style={styles.metaDot}>·</Text>
-                <Ionicons
-                  name="document-text-outline"
-                  size={12}
-                  color={colors.mutedForeground}
-                />
-                <Text style={styles.metaText}>
-                  {item.notesCount} note{item.notesCount !== 1 ? 's' : ''}
+        <TouchableOpacity 
+          onPress={() => {
+            router.push(`/record/${item.id}`);
+          }}
+          activeOpacity={0.7}
+        >
+          <Card style={styles.listItem}>
+            <CardContent style={styles.listItemContent}>
+              {/* Patient avatar */}
+              <View style={styles.avatar}>
+                <Text style={styles.avatarText}>
+                  {getInitials(item.patient)}
                 </Text>
               </View>
-            </View>
 
-            {/* Status + Confidence */}
-            <View style={styles.rightCol}>
-              <Badge variant={statusVariant(item.status)}>
-                {statusLabel(item.status)}
-              </Badge>
-              {item.confidence > 0 && (
-                <View
-                  style={[
-                    styles.confidencePill,
-                    {
-                      backgroundColor: confBg.bg,
-                      borderColor: confBg.border,
-                    },
-                  ]}
-                >
-                  <Text style={[styles.confidenceText, { color: confBg.text }]}>
-                    {item.confidence}%
+              {/* Patient info */}
+              <View style={styles.patientInfo}>
+                <Text style={styles.patientName} numberOfLines={1}>
+                  {item.patient}
+                </Text>
+                <View style={styles.metaRow}>
+                  <Ionicons
+                    name="time-outline"
+                    size={12}
+                    color={colors.mutedForeground}
+                  />
+                  <Text style={styles.metaText}>{item.time}</Text>
+                  <Text style={styles.metaDot}>·</Text>
+                  <Ionicons
+                    name="document-text-outline"
+                    size={12}
+                    color={colors.mutedForeground}
+                  />
+                  <Text style={styles.metaText}>
+                    {item.notesCount} note{item.notesCount !== 1 ? 's' : ''}
                   </Text>
                 </View>
-              )}
-            </View>
-          </CardContent>
-        </Card>
+              </View>
+
+              {/* Status + Confidence */}
+              <View style={styles.rightCol}>
+                <Badge variant={statusVariant(item.status)}>
+                  {statusLabel(item.status)}
+                </Badge>
+                {item.confidence > 0 && (
+                  <View
+                    style={[
+                      styles.confidencePill,
+                      {
+                        backgroundColor: confBg.bg,
+                        borderColor: confBg.border,
+                      },
+                    ]}
+                  >
+                    <Text style={[styles.confidenceText, { color: confBg.text }]}>
+                      {item.confidence}%
+                    </Text>
+                  </View>
+                )}
+              </View>
+            </CardContent>
+          </Card>
+        </TouchableOpacity>
       );
     },
     []

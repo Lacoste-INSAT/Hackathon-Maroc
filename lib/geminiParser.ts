@@ -15,18 +15,18 @@ import type { ExtractionResult } from './types';
  * @param rawText The raw response text from Gemini
  * @returns Parsed ExtractionResult, or null if unparseable
  */
-export function parseGeminiResponse(rawText: string): ExtractionResult | null {
+export function parseGeminiResponse(rawText: string): ExtractionResult {
+  if (!rawText || typeof rawText !== 'string') {
+    throw new Error('[geminiParser] Received empty or invalid response from AI service.');
+  }
+
+  // Match everything from the first '{' to the last '}'
+  const jsonMatch = rawText.match(/\{[\s\S]*\}/);
+  if (!jsonMatch) {
+    throw new Error(`[geminiParser] AI response did not contain valid JSON metadata. Raw response snippet: "${rawText.slice(0, 100)}..."`);
+  }
+
   try {
-    if (!rawText || typeof rawText !== 'string') {
-      return null;
-    }
-
-    // Match everything from the first '{' to the last '}'
-    const jsonMatch = rawText.match(/\{[\s\S]*\}/);
-    if (!jsonMatch) {
-      return null;
-    }
-
     const parsed = JSON.parse(jsonMatch[0]);
 
     return {
@@ -35,6 +35,6 @@ export function parseGeminiResponse(rawText: string): ExtractionResult | null {
       predictionScore: typeof parsed.predictionScore === 'number' ? parsed.predictionScore : 0,
     };
   } catch (error) {
-    return null;
+    throw new Error(`[geminiParser] Failed to parse AI JSON. Errors: ${error instanceof Error ? error.message : String(error)}`);
   }
 }

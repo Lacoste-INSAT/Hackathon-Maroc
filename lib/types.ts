@@ -136,7 +136,7 @@ export type CapturePhase =
 export type HistoryStatus = 'ai-realtime' | 'auto-synced' | 'doctor-reviewed';
 
 export interface HistoryEntry {
-  id: number;
+  id: string;
   patient: string;
   patientId: string;
   time: string;

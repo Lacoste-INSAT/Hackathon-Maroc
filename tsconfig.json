@@ -5,6 +5,9 @@
     "baseUrl": ".",
     "paths": {
       "@/*": ["./*"]
-    }
+    },
+    "jsx": "react-native",
+    "moduleResolution": "bundler",
+    "esModuleInterop": true
   }
 }

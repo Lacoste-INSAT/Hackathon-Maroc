@@ -71,8 +71,9 @@ async function attemptSync(): Promise<void> {
  * Debounced sync trigger.
  * Waits DEBOUNCE_MS after the last connectivity change before syncing.
  * This prevents rapid fire/stop cycles on flaky connections.
+ * Exported so other modules (like offlineQueue) can trigger a sync manually.
  */
-function debouncedSync(): void {
+export function debouncedSync(): void {
   if (_debounceTimer) {
     clearTimeout(_debounceTimer);
   }

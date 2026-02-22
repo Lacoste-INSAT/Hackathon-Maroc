@@ -46,6 +46,8 @@ import {
 } from '@/services/recordRepository';
 import { getSessionById } from '@/services/sessionRepository';
 import { syncAllPending } from '@/services/cloudSync';
+import { getFailedItems, retryFailedItem } from '@/services/offlineQueue';
+import { debouncedSync } from '@/services/backgroundSync';
 import { Card, CardContent } from '@/components/ui/Card';
 import { Badge } from '@/components/ui/Badge';
 import { Button } from '@/components/ui/Button';
@@ -60,6 +62,17 @@ const SKELETON_COUNT = 4;
 interface EnrichedRecord extends DBRecord {
   patientName: string;
   patientCode: string;
+}
+
+// Map the failed sync item type to display it easily
+interface EnrichedFailedItem {
+  queueId: number;
+  recordId: string;
+  patientName: string;
+  patientCode: string;
+  originalImagePath: string;
+  errorMsg: string;
+  retryCount: number;
 }
 
 interface EditableField extends ExtractionField {
@@ -78,6 +91,9 @@ export default function QueueScreen() {
   const [selectedRecord, setSelectedRecord] = useState<EnrichedRecord | null>(null);
   const [editableFields, setEditableFields] = useState<EditableField[]>([]);
   const [submitting, setSubmitting] = useState(false);
+  const [activeTab, setActiveTab] = useState<'review' | 'failed'>('review');
+  const [failedItems, setFailedItems] = useState<EnrichedFailedItem[]>([]);
+  const [retryingQueueId, setRetryingQueueId] = useState<number | null>(null);
 
   // ── Data fetching ──
 
@@ -86,26 +102,60 @@ export default function QueueScreen() {
       const raw = await getNeedsReviewRecords();
 
       // Enrich each record with patient info from the session
-      const enriched: EnrichedRecord[] = await Promise.all(
-        raw.map(async (rec) => {
-          let patientName = 'Unknown Patient';
-          let patientCode = '—';
-          try {
-            const session = await getSessionById(rec.session_id);
-            if (session) {
-              patientName = session.patient_name ?? 'Unknown Patient';
-              patientCode = session.patient_code;
-            }
-          } catch {
-            // Non-critical — use defaults
+      const enriched: EnrichedRecord[] = [];
+      for (const rec of raw) {
+        let patientName = 'Unknown Patient';
+        let patientCode = '—';
+        try {
+          const session = await getSessionById(rec.session_id);
+          if (session) {
+            patientName = session.patient_name ?? 'Unknown Patient';
+            patientCode = session.patient_code;
           }
-          return { ...rec, patientName, patientCode };
-        })
-      );
+        } catch {
+          // Non-critical — use defaults
+        }
+        enriched.push({ ...rec, patientName, patientCode });
+      }
 
       setRecords(enriched);
+
+      // Fetch failed queue items
+      const failedRaw = await getFailedItems();
+      const db = require('@/services/database').getDatabase();
+      
+      const enrichedFailed: EnrichedFailedItem[] = [];
+      for (const item of failedRaw) {
+        let patientName = 'Unknown';
+        let patientCode = '—';
+        let originalImagePath = '';
+        
+        try {
+          const record = await db.getFirstAsync('SELECT * FROM records WHERE id = ?', item.record_id) as DBRecord | null;
+          if (record) {
+            originalImagePath = record.original_image_path;
+            const session = await getSessionById(record.session_id);
+            if (session) {
+              patientName = session.patient_name ?? 'Unknown';
+              patientCode = session.patient_code;
+            }
+          }
+        } catch (e) {}
+
+        enrichedFailed.push({
+          queueId: item.id,
+          recordId: item.record_id,
+          patientName,
+          patientCode,
+          originalImagePath,
+          errorMsg: `Failed after ${item.retry_count} attempts`,
+          retryCount: item.retry_count
+        });
+      }
+      setFailedItems(enrichedFailed);
+
     } catch (err) {
-      console.error('[QueueScreen] Failed to fetch records:', err);
+      console.error('[QueueScreen] Failed to fetch records/items:', err);
     }
   }, []);
 
@@ -195,22 +245,21 @@ export default function QueueScreen() {
         setEditableFields([]);
       } else {
         // Enrich & auto-advance to next item
-        const enriched: EnrichedRecord[] = await Promise.all(
-          updatedRaw.map(async (rec) => {
-            let patientName = 'Unknown Patient';
-            let patientCode = '—';
-            try {
-              const session = await getSessionById(rec.session_id);
-              if (session) {
-                patientName = session.patient_name ?? 'Unknown Patient';
-                patientCode = session.patient_code;
-              }
-            } catch {
-              // defaults
+        const enriched: EnrichedRecord[] = [];
+        for (const rec of updatedRaw) {
+          let patientName = 'Unknown Patient';
+          let patientCode = '—';
+          try {
+            const session = await getSessionById(rec.session_id);
+            if (session) {
+              patientName = session.patient_name ?? 'Unknown Patient';
+              patientCode = session.patient_code;
             }
-            return { ...rec, patientName, patientCode };
-          })
-        );
+          } catch {
+            // defaults
+          }
+          enriched.push({ ...rec, patientName, patientCode });
+        }
 
         setRecords(enriched);
 
@@ -232,6 +281,22 @@ export default function QueueScreen() {
       setSubmitting(false);
     }
   }, [selectedRecord, editableFields, openDetail, closeDetail]);
+
+  // ── Retry Failed Item ──
+  const handleRetryItem = useCallback(async (queueId: number) => {
+    setRetryingQueueId(queueId);
+    try {
+      await Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+      await retryFailedItem(queueId);
+      setFailedItems((prev) => prev.filter((item) => item.queueId !== queueId));
+      debouncedSync(); // trigger background worker to pick it up immediately
+    } catch (error) {
+      console.error('Failed to retry item:', error);
+      Alert.alert('Error', 'Could not retry item.');
+    } finally {
+      setRetryingQueueId(null);
+    }
+  }, []);
 
   // ── Field editing ──
 
@@ -263,38 +328,78 @@ export default function QueueScreen() {
     <View style={styles.container}>
       {/* Header */}
       <View style={styles.header}>
-        <Text style={styles.title}>Review Queue</Text>
-        <Text style={styles.subtitle}>
-          {loading
-            ? 'Loading records…'
-            : records.length === 0
-            ? 'All caught up!'
-            : `${records.length} record${records.length !== 1 ? 's' : ''} pending review`}
-        </Text>
+        <Text style={styles.title}>Queue</Text>
+        
+        <View style={styles.tabRow}>
+          <Button
+            variant={activeTab === 'review' ? 'primary' : 'ghost'}
+            size="sm"
+            style={styles.tabButton}
+            onPress={() => setActiveTab('review')}
+          >
+            {`Needs Review (${records.length})`}
+          </Button>
+          <Button
+            variant={activeTab === 'failed' ? 'primary' : 'ghost'}
+            size="sm"
+            style={styles.tabButton}
+            onPress={() => setActiveTab('failed')}
+          >
+            {`Failed Syncs (${failedItems.length})`}
+          </Button>
+        </View>
       </View>
 
       {loading ? (
         <SkeletonList />
-      ) : records.length === 0 ? (
-        <EmptyState />
+      ) : activeTab === 'review' ? (
+        records.length === 0 ? (
+          <EmptyState />
+        ) : (
+          <FlatList
+            data={records}
+            keyExtractor={(item) => item.id}
+            renderItem={(info) => (
+              <RecordRow item={info.item} onReview={openDetail} />
+            )}
+            contentContainerStyle={styles.listContent}
+            showsVerticalScrollIndicator={false}
+            refreshControl={
+              <RefreshControl
+                refreshing={refreshing}
+                onRefresh={onRefresh}
+                tintColor={colors.primary}
+                colors={[colors.primary]}
+              />
+            }
+          />
+        )
       ) : (
-        <FlatList
-          data={records}
-          keyExtractor={(item) => item.id}
-          renderItem={(info) => (
-            <RecordRow item={info.item} onReview={openDetail} />
-          )}
-          contentContainerStyle={styles.listContent}
-          showsVerticalScrollIndicator={false}
-          refreshControl={
-            <RefreshControl
-              refreshing={refreshing}
-              onRefresh={onRefresh}
-              tintColor={colors.primary}
-              colors={[colors.primary]}
-            />
-          }
-        />
+        failedItems.length === 0 ? (
+          <EmptyState subtitle="No failed syncs." />
+        ) : (
+          <FlatList
+            data={failedItems}
+            keyExtractor={(item) => item.queueId.toString()}
+            renderItem={({ item }) => (
+              <FailedItemRow 
+                item={item} 
+                onRetry={handleRetryItem} 
+                isRetrying={retryingQueueId === item.queueId} 
+              />
+            )}
+            contentContainerStyle={styles.listContent}
+            showsVerticalScrollIndicator={false}
+            refreshControl={
+              <RefreshControl
+                refreshing={refreshing}
+                onRefresh={onRefresh}
+                tintColor={colors.primary}
+                colors={[colors.primary]}
+              />
+            }
+          />
+        )
       )}
     </View>
   );
@@ -357,6 +462,54 @@ function RecordRow({ item, onReview }: RecordRowProps) {
           }
         >
           Review
+        </Button>
+      </CardContent>
+    </Card>
+  );
+}
+
+// ─────────────────────────────────────────────────────────────
+//  Sub-Component: Failed Item Row
+// ─────────────────────────────────────────────────────────────
+
+function FailedItemRow({
+  item,
+  onRetry,
+  isRetrying,
+}: {
+  item: EnrichedFailedItem;
+  onRetry: (id: number) => void;
+  isRetrying: boolean;
+}) {
+  return (
+    <Card style={styles.rowCard}>
+      <CardContent style={styles.rowContent}>
+        <View style={styles.rowLeft}>
+          <Image
+            source={{ uri: item.originalImagePath }}
+            style={styles.thumbnail}
+            resizeMode="cover"
+          />
+          <View style={styles.rowInfo}>
+            <Text style={styles.rowPatientName} numberOfLines={1}>
+              {item.patientName}
+            </Text>
+            <Text style={styles.rowPatientCode}>{item.patientCode}</Text>
+            <Text style={{ fontSize: 12, color: colors.destructive, marginTop: 4 }} numberOfLines={2}>
+              {item.errorMsg}
+            </Text>
+          </View>
+        </View>
+
+        <Button
+          variant="outline"
+          size="sm"
+          onPress={() => onRetry(item.queueId)}
+          loading={isRetrying}
+          disabled={isRetrying}
+          icon={<Ionicons name="refresh-outline" size={14} color={colors.primary} />}
+        >
+          Retry
         </Button>
       </CardContent>
     </Card>
@@ -630,7 +783,29 @@ function SkeletonCard({ delay }: { delay: number }) {
 //  Sub-Component: Empty State
 // ─────────────────────────────────────────────────────────────
 
-function EmptyState() {
+function EmptyState({ subtitle }: { subtitle?: string }) {
+  const [nuking, setNuking] = useState(false);
+  const handleNuke = async () => {
+    Alert.alert(
+      "Clear Local Database",
+      "This will permanently delete all local sessions, records, and sync queue data. It cannot be undone. Are you sure?",
+      [
+        { text: "Cancel", style: "cancel" },
+        { 
+          text: "Wipe Data", 
+          style: "destructive", 
+          onPress: async () => {
+            setNuking(true);
+            const { nukeAndRebuildDatabase } = require('@/services/nukeDatabase');
+            await nukeAndRebuildDatabase();
+            Alert.alert("Success", "Local database cleared. Please pull to refresh to see changes or restart the app.");
+            setNuking(false);
+          } 
+        }
+      ]
+    );
+  };
+
   return (
     <View style={styles.emptyContainer}>
       <View style={styles.emptyIconWrap}>
@@ -642,8 +817,17 @@ function EmptyState() {
       </View>
       <Text style={styles.emptyTitle}>Queue Clear</Text>
       <Text style={styles.emptySubtitle}>
-        All records have been reviewed and approved. Pull down to refresh.
+        {subtitle || 'All records have been reviewed and approved. Pull down to refresh.'}
       </Text>
+      <Button 
+         variant="outline" 
+         style={{ marginTop: 24, alignSelf: 'center', borderColor: colors.destructive }}
+         onPress={handleNuke}
+         loading={nuking}
+         disabled={nuking}
+      >
+        <Text style={{ color: colors.destructive, fontWeight: 'bold' }}>Wipe Local Database</Text>
+      </Button>
     </View>
   );
 }
@@ -675,6 +859,14 @@ const styles = StyleSheet.create({
     fontSize: fontSize.md,
     color: colors.mutedForeground,
     marginTop: spacing.xs,
+  },
+  tabRow: {
+    flexDirection: 'row',
+    marginTop: spacing.sm,
+    gap: spacing.sm,
+  },
+  tabButton: {
+    flex: 1,
   },
 
   // ── List view ──
