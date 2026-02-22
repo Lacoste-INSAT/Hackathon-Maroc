@@ -3,14 +3,14 @@
 // ─────────────────────────────────────────────────────────────
 
 import React from 'react';
-import { View, Text, StyleSheet, type ViewStyle, type TextStyle } from 'react-native';
+import { View, Text, StyleSheet, type StyleProp, type ViewStyle, type TextStyle } from 'react-native';
 import { colors, borderRadius, spacing, shadow, fontSize, fontWeight } from '@/lib/theme';
 
 // ── Card ──
 
 interface CardProps {
   children: React.ReactNode;
-  style?: ViewStyle;
+  style?: StyleProp<ViewStyle>;
   variant?: 'default' | 'success' | 'warning' | 'primary';
 }
 
@@ -27,7 +27,7 @@ export function Card({ children, style, variant = 'default' }: CardProps) {
 
 interface CardHeaderProps {
   children: React.ReactNode;
-  style?: ViewStyle;
+  style?: StyleProp<ViewStyle>;
 }
 
 export function CardHeader({ children, style }: CardHeaderProps) {
@@ -38,7 +38,7 @@ export function CardHeader({ children, style }: CardHeaderProps) {
 
 interface CardTitleProps {
   children: React.ReactNode;
-  style?: TextStyle;
+  style?: StyleProp<TextStyle>;
 }
 
 export function CardTitle({ children, style }: CardTitleProps) {
@@ -49,7 +49,7 @@ export function CardTitle({ children, style }: CardTitleProps) {
 
 interface CardContentProps {
   children: React.ReactNode;
-  style?: ViewStyle;
+  style?: StyleProp<ViewStyle>;
 }
 
 export function CardContent({ children, style }: CardContentProps) {

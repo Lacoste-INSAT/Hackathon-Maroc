@@ -173,8 +173,7 @@ export default function DashboardScreen() {
       {/* ── Start Session Button ───────────────────────────── */}
       <Button
         onPress={() => {
-          // TODO: Navigate to camera/QR flow
-          // router.push('/capture');
+          router.push('/capture');
         }}
         variant="primary"
         size="xl"

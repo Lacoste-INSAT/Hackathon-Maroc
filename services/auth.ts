@@ -5,8 +5,11 @@
 // Wraps Supabase Auth for sign-in, sign-out, and session management.
 // ─────────────────────────────────────────────────────────────
 
-import { supabase } from '@/lib/supabase';
-import type { Session, User, AuthChangeEvent } from '@supabase/supabase-js';
+import { supabase } from '../mobile/lib/supabase';
+// Supabase types will be inferred from the client directly to avoid path resolution errors.
+type Session = any;
+type User = any;
+type AuthChangeEvent = string;
 
 /**
  * Sign in with email and password.

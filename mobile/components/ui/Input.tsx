@@ -2,29 +2,32 @@
 // Snap & Sync — Native Input Component
 // ─────────────────────────────────────────────────────────────
 
-import React from 'react';
+import React, { forwardRef } from 'react';
 import { TextInput, StyleSheet, type TextInputProps, type ViewStyle } from 'react-native';
 import { colors, borderRadius, spacing, fontSize, fontWeight } from '@/lib/theme';
 
-interface InputProps extends TextInputProps {
+export interface InputProps extends TextInputProps {
   variant?: 'default' | 'warning';
   containerStyle?: ViewStyle;
 }
 
-export function Input({ variant = 'default', containerStyle, style, ...props }: InputProps) {
-  return (
-    <TextInput
-      placeholderTextColor={colors.mutedForeground}
-      style={[
-        styles.input,
-        variant === 'warning' && styles.warning,
-        containerStyle,
-        style,
-      ]}
-      {...props}
-    />
-  );
-}
+export const Input = forwardRef<TextInput, InputProps>(
+  ({ variant = 'default', containerStyle, style, ...props }, ref) => {
+    return (
+      <TextInput
+        ref={ref}
+        placeholderTextColor={colors.mutedForeground}
+        style={[
+          styles.input,
+          variant === 'warning' && styles.warning,
+          containerStyle,
+          style,
+        ]}
+        {...props}
+      />
+    );
+  }
+);
 
 const styles = StyleSheet.create({
   input: {

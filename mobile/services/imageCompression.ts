@@ -9,6 +9,7 @@
 
 import { manipulateAsync, SaveFormat } from 'expo-image-manipulator';
 import * as FileSystem from 'expo-file-system';
+import { getInfoAsync, makeDirectoryAsync, moveAsync, documentDirectory } from 'expo-file-system/legacy';
 import { COMPRESSION_TARGET_KB } from '@/lib/types';
 
 const MAX_WIDTH = 1600;
@@ -59,15 +60,19 @@ export async function compressImage(originalUri: string): Promise<CompressionRes
   }
 
   // Move compressed file to a stable location
-  const compressedDir = `${FileSystem.documentDirectory}compressed/`;
-  const dirInfo = await FileSystem.getInfoAsync(compressedDir);
+  // Move compressed file to a stable location
+  const documentDir = typeof documentDirectory === 'string'
+    ? documentDirectory
+    : (FileSystem as any).documentDirectory;
+  const compressedDir = `${documentDir}compressed/`;
+  const dirInfo = await getInfoAsync(compressedDir);
   if (!dirInfo.exists) {
-    await FileSystem.makeDirectoryAsync(compressedDir, { intermediates: true });
+    await makeDirectoryAsync(compressedDir, { intermediates: true });
   }
 
   const filename = `compressed_${Date.now()}.jpg`;
   const finalUri = `${compressedDir}${filename}`;
-  await FileSystem.moveAsync({ from: result.uri, to: finalUri });
+  await moveAsync({ from: result.uri, to: finalUri });
 
   console.log(`[imageCompression] ${sizeKB.toFixed(0)}KB @ quality ${quality.toFixed(2)}`);
 
@@ -79,7 +84,7 @@ export async function compressImage(originalUri: string): Promise<CompressionRes
  */
 export async function fileToBase64(uri: string): Promise<string> {
   return await FileSystem.readAsStringAsync(uri, {
-    encoding: FileSystem.EncodingType.Base64,
+    encoding: 'base64',
   });
 }
 
@@ -87,9 +92,9 @@ export async function fileToBase64(uri: string): Promise<string> {
  * Get the file size in KB.
  */
 async function getFileSizeKB(uri: string): Promise<number> {
-  const info = await FileSystem.getInfoAsync(uri, { size: true });
+  const info = await getInfoAsync(uri, { size: true } as any);
   if (info.exists && 'size' in info) {
-    return (info.size ?? 0) / 1024;
+    return (info as any).size / 1024;
   }
   return 0;
 }

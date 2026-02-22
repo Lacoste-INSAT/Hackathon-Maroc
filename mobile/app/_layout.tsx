@@ -20,7 +20,11 @@
 import { useEffect, useRef, useState, useCallback } from 'react';
 import { Stack } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
-import { View, Text, StyleSheet, ActivityIndicator } from 'react-native';
+import { View, Text, StyleSheet } from 'react-native';
+import * as SplashScreen from 'expo-splash-screen';
+
+// Prevent the splash screen from auto-hiding before asset loading is complete.
+SplashScreen.preventAutoHideAsync();
 
 import { NetworkProvider } from '@/contexts/NetworkContext';
 import { initDatabase } from '@/services/database';
@@ -78,6 +82,13 @@ export default function RootLayout() {
     };
   }, [isDbReady]);
 
+  // Hide splash screen once database is fully ready
+  useEffect(() => {
+    if (isDbReady) {
+      SplashScreen.hideAsync();
+    }
+  }, [isDbReady]);
+
   // ── Step 3: Render ─────────────────────────────────────────
 
   // Fatal init error — show a recovery message
@@ -93,14 +104,11 @@ export default function RootLayout() {
     );
   }
 
-  // DB still initializing — show a non-blocking splash
+  // DB still initializing — return null to prevent router tree evaluation
+  // expo-router handles splash screen hiding automatically when the first layout mounts,
+  // but since we are delaying it here, we should ensure the tree isn't evaluated.
   if (!isDbReady) {
-    return (
-      <View style={styles.splashContainer}>
-        <ActivityIndicator size="large" color={colors.primary} />
-        <Text style={styles.splashText}>Initializing Snap & Sync…</Text>
-      </View>
-    );
+    return null;
   }
 
   // ── App is ready — render with providers ───────────────────

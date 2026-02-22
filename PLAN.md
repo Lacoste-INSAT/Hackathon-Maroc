@@ -30,8 +30,8 @@
 
 - [x] **Task 1.1** — Expo Project Init (routing, folder structure, tab layout) ✅ 2026-02-22
 - [x] **Task 1.2** — Design System & Theme (colors, typography, Card/Badge/Button/Input) ✅ 2026-02-22
-- [ ] **Task 1.3** — Port Dashboard Screen (greeting, stats, start session button)
-- [ ] **Task 1.4** — Port History Screen (FlatList, summary cards, status legend)
+- [x] **Task 1.3** — Port Dashboard Screen (greeting, stats, start session button) ✅ 2026-02-22
+- [x] **Task 1.4** — Port History Screen (FlatList, summary cards, status legend) ✅ 2026-02-22
 - [x] **Task 1.5** — Port Review Queue Screen (list view + single record review) ✅ 2026-02-22
 
 ## Phase 2: Camera & QR Integration
