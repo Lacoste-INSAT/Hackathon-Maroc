@@ -1,0 +1,548 @@
+# Snap & Sync — Implementation Plan v2
+
+> Turn a v0 mock UI into a production-ready, offline-first Expo mobile EMR app.
+
+---
+
+## 1. Gap Analysis — Mock vs. Production
+
+### What the Mock Has ✅
+
+| Area | Details |
+|------|---------|
+| **UI Screens** | Dashboard, Active Session, QR Scanner dialog, Manual ID Entry, Camera viewfinder, Image preview, AI spinner, Real-time AI review (split-screen), Saved flash, Review Queue (list + detail), History |
+| **Navigation** | 3-tab bottom nav: Home, Queue, History |
+| **Data Models** | [ExtractedField](file:///e:/patient-data-flow/lib/mock-data.ts#3-8), [PatientRecord](file:///e:/patient-data-flow/lib/mock-data.ts#9-22), [HistoryEntry](file:///e:/patient-data-flow/lib/mock-data.ts#25-34) TypeScript interfaces |
+| **Flow Logic** | Session start → capture → online branch (analyze → review → approve) vs. offline branch (queue + toast) |
+| **Confidence UI** | Color-coded badges/bars (<80% destructive, 80-89% primary, ≥90% success), editable fields |
+
+### What Is Missing 🔴
+
+| Gap | Priority | Notes |
+|-----|----------|-------|
+| **React Native / Expo** | Critical | Currently Next.js 16 web-only |
+| **Real Camera** | Critical | Fake HTML viewfinder → needs `expo-camera` |
+| **Real QR Scanner** | Critical | Simulated with `setTimeout` → needs barcode scanning |
+| **Image Compression** | High | Need **tunable 150-200KB** compressed JPEG (not 50KB — too destructive for handwriting) |
+| **Original Photo Retention** | High | Always save full-res original locally so doctor can review the image even before AI runs |
+| **SQLite (Local DB)** | Critical | Zero local persistence |
+| **Network Detection** | Critical | `isOnline` is a toggle button, not real |
+| **Supabase Backend** | Critical | No auth, no DB, no storage |
+| **Gemini AI Integration** | Critical | Extraction results are hardcoded mock data |
+| **Optimistic UI** | High | Online AI flow must NOT block the doctor with a 10s spinner — use "Saved! AI processing in background…" pattern |
+| **Background Sync** | High | No sync logic exists |
+| **Authentication** | High | Doctor name hardcoded |
+| **Patient Registry** | Medium | No QR → patient lookup |
+| **Error Handling** | High | No error boundaries, no retry logic |
+
+> [!IMPORTANT]
+> **Three critical design decisions incorporated from review:**
+> 1. **Compression = 150-200KB** (tunable via `COMPRESSION_TARGET_KB`), not 50KB. Gemini needs legible ink edges.
+> 2. **Original photo always saved** to device filesystem immediately. Doctors can visually review their own photo at any time, even before AI extraction.
+> 3. **Optimistic UI for online mode**: Doctor sees "Saved! AI is processing in background…" and can immediately capture the next page. AI results arrive async and appear as a confirmable notification — no 10-second blocking spinner.
+
+---
+//'State Management (Zustand): As the app gets complex (handling sessions, online status, and sync queues across different screens), passing props will get messy. I strongly recommend telling the AI to use Zustand. It is lightweight, much simpler than Redux, and AI agents write it perfectly.'
+
+## 2. Architecture & Data Model
+
+### System Architecture
+
+```mermaid
+graph TB
+    subgraph Mobile ["📱 Expo App (Offline-First)"]
+        UI["React Native UI"]
+        SQLite["SQLite Local DB"]
+        Camera["expo-camera"]
+        FS["Local Filesystem<br/>(originals + compressed)"]
+        NetInfo["NetInfo"]
+        SyncWorker["Background Sync Worker"]
+    end
+
+    subgraph Cloud ["☁️ Supabase"]
+        Auth["Auth"]
+        DB["PostgreSQL"]
+        Storage["Storage (Images)"]
+        EdgeFn["Edge Functions"]
+    end
+
+    subgraph AI ["🤖 Gemini"]
+        GeminiAPI["Gemini 2.5 Flash Vision"]
+    end
+
+    UI --> Camera
+    Camera --> FS
+    FS --> SQLite
+    NetInfo --> SyncWorker
+    SyncWorker --> Storage
+    SyncWorker --> EdgeFn
+    EdgeFn --> GeminiAPI
+    EdgeFn --> DB
+    UI -- "Online: Optimistic Save + BG AI" --> EdgeFn
+```
+
+### Supabase PostgreSQL Schema
+
+```sql
+CREATE TABLE clinics (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  name TEXT NOT NULL, location TEXT,
+  created_at TIMESTAMPTZ DEFAULT now()
+);
+
+CREATE TABLE doctors (
+  id UUID PRIMARY KEY REFERENCES auth.users(id),
+  full_name TEXT NOT NULL,
+  clinic_id UUID REFERENCES clinics(id),
+  created_at TIMESTAMPTZ DEFAULT now()
+);
+
+CREATE TABLE patients (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  patient_code TEXT UNIQUE NOT NULL,  -- "AHM-924"
+  full_name TEXT NOT NULL,
+  date_of_birth DATE, gender TEXT CHECK (gender IN ('M','F','Other')),
+  clinic_id UUID REFERENCES clinics(id),
+  created_at TIMESTAMPTZ DEFAULT now()
+);
+
+CREATE TABLE sessions (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  patient_id UUID NOT NULL REFERENCES patients(id),
+  doctor_id UUID NOT NULL REFERENCES doctors(id),
+  started_at TIMESTAMPTZ NOT NULL, ended_at TIMESTAMPTZ,
+  status TEXT CHECK (status IN ('active','completed')) DEFAULT 'active',
+  created_at TIMESTAMPTZ DEFAULT now()
+);
+
+CREATE TABLE records (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  session_id UUID NOT NULL REFERENCES sessions(id),
+  image_url TEXT,                    -- Supabase Storage path
+  extracted_data JSONB,
+  overall_confidence FLOAT, prediction_score FLOAT,
+  status TEXT CHECK (status IN ('pending_sync','pending_extraction',
+    'needs_review','approved')) DEFAULT 'pending_sync',
+  flagged_reason TEXT,
+  doctor_corrections JSONB,
+  synced_at TIMESTAMPTZ, extracted_at TIMESTAMPTZ, reviewed_at TIMESTAMPTZ,
+  created_at TIMESTAMPTZ DEFAULT now()
+);
+```
+
+### SQLite Local Schema
+
+```sql
+CREATE TABLE IF NOT EXISTS sessions (
+  id TEXT PRIMARY KEY, patient_code TEXT NOT NULL,
+  patient_name TEXT, doctor_id TEXT NOT NULL,
+  started_at TEXT NOT NULL, ended_at TEXT,
+  status TEXT DEFAULT 'active', synced INTEGER DEFAULT 0
+);
+
+CREATE TABLE IF NOT EXISTS records (
+  id TEXT PRIMARY KEY, session_id TEXT NOT NULL,
+  original_image_path TEXT NOT NULL,   -- full-res original (always kept)
+  compressed_image_path TEXT,          -- 150-200KB version for upload
+  extracted_data TEXT, overall_confidence REAL,
+  status TEXT DEFAULT 'pending_sync',
+  flagged_reason TEXT, doctor_corrections TEXT,
+  created_at TEXT NOT NULL, synced_at TEXT,
+  FOREIGN KEY (session_id) REFERENCES sessions(id)
+);
+
+CREATE TABLE IF NOT EXISTS sync_queue (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  record_id TEXT NOT NULL, action TEXT NOT NULL,
+  retry_count INTEGER DEFAULT 0, last_attempt TEXT,
+  status TEXT DEFAULT 'pending',
+  FOREIGN KEY (record_id) REFERENCES records(id)
+);
+
+CREATE TABLE IF NOT EXISTS patients (
+  id TEXT PRIMARY KEY, patient_code TEXT UNIQUE NOT NULL,
+  full_name TEXT NOT NULL, date_of_birth TEXT, gender TEXT,
+  synced INTEGER DEFAULT 0
+);
+```
+
+---
+
+## 3. Implementation Roadmap
+
+> Each task includes an exact prompt. Every prompt begins with **"Read PLAN.md to see where we are"** for continuity.
+
+---
+
+### Phase 1: Foundation & Navigation
+
+#### Task 1.1 — Expo Project Init
+```
+Read PLAN.md to see where we are. Implement Task 1.1:
+
+Create a new Expo project with expo-router (file-based routing) + TypeScript.
+Folder structure:
+  /app/(tabs)/_layout.tsx, index.tsx, queue.tsx, history.tsx
+  /app/(auth)/_layout.tsx, login.tsx
+  /app/_layout.tsx
+  /components, /lib, /services, /hooks
+
+Install: expo-router, react-native-safe-area-context, react-native-screens,
+@expo/vector-icons, expo-status-bar, react-native-reanimated.
+
+Create tab layout with icons for Home, Queue (with badge count prop), History.
+Mark Task 1.1 as DONE in PLAN.md when complete.
+```
+
+#### Task 1.2 — Design System & Theme
+```
+Read PLAN.md. Implement Task 1.2:
+
+Create /lib/theme.ts with color palette (primary, success, warning, destructive,
+background, card, foreground, muted, border) + getConfidenceColor(n) and
+getConfidenceBg(n) helpers.
+
+Create UI components using StyleSheet.create (NOT Tailwind):
+  /components/ui/Card.tsx, Badge.tsx, Button.tsx (primary/outline/ghost),
+  Input.tsx, Progress.tsx (animated, confidence-color-coded).
+
+Use expo-google-fonts/inter for typography.
+Mark Task 1.2 as DONE in PLAN.md.
+```
+
+#### Task 1.3 — Port Dashboard Screen
+```
+Read PLAN.md. Implement Task 1.3:
+
+Port the Dashboard (Home tab, no-active-session state) to React Native.
+- Greeting with doctor name + clinic subtitle
+- "Start New Session" button with QR icon
+- 3 stat cards row: Today, Pending, AI Accuracy
+- Offline warning card when isOnline=false
+
+Props: doctorName, clinicName, isOnline, todayCount, pendingCount,
+aiAccuracy, onStartSession.
+Mark Task 1.3 as DONE in PLAN.md.
+```
+
+#### Task 1.4 — Port History Screen
+```
+Read PLAN.md. Implement Task 1.4:
+
+Port History tab to React Native using FlatList (not map + ScrollView).
+Title, summary cards (AI Real-time / Auto-synced / Doctor Reviewed counts),
+status legend pills, scrollable patient entries with avatar, name, ID, time,
+notes count, status badge, confidence %.
+Mark Task 1.4 as DONE in PLAN.md.
+```
+
+#### Task 1.5 — Port Review Queue Screen
+```
+Read PLAN.md. Implement Task 1.5:
+
+Port Review Queue with two sub-views:
+1. Queue List: FlatList of flagged records (thumbnail, patient info,
+   confidence badges, "Review >" button) + auto-approved section.
+2. Single Record Review: scanned image, patient info, flagged reason,
+   editable fields with per-field confidence bars, "Submit & Verify" button.
+   On submit: remove from queue, add to approved, auto-advance.
+   When all done: celebration screen.
+Mark Task 1.5 as DONE in PLAN.md.
+```
+
+---
+
+### Phase 2: Camera & QR Integration
+
+#### Task 2.1 — QR Code Scanner
+```
+Read PLAN.md. Implement Task 2.1:
+
+Build /components/QrScanner.tsx using expo-camera barcode scanning.
+Full-screen camera with scan-frame overlay (corner brackets, animated line).
+On QR detected: extract patient_code, call onScanSuccess(code).
+After 5s with no detection: show "QR Damaged? Enter ID Manually" fallback
+with /components/ManualIdEntry.tsx (modal, uppercase TextInput, max 7 chars).
+Handle camera permissions with useCameraPermissions().
+Wire into Home tab "Start New Session" button.
+Mark Task 2.1 as DONE in PLAN.md.
+```
+
+#### Task 2.2 — Document Camera
+```
+Read PLAN.md. Implement Task 2.2:
+
+Build /components/DocumentCamera.tsx: camera with document-frame overlay,
+instruction text, circular shutter button. On capture: takePictureAsync({
+quality: 0.8, base64: false }).
+
+Build /components/ImagePreview.tsx: show captured photo, contextual text
+(online vs offline), Retake + Confirm buttons.
+
+CRITICAL: On capture, ALWAYS save the original full-resolution photo to the
+app's document directory immediately (before any compression). This is the
+doctor's visual reference even when offline and AI hasn't run yet.
+
+Wire into Active Session "Capture" button.
+Mark Task 2.2 as DONE in PLAN.md.
+```
+
+#### Task 2.3 — Image Compression (Tunable)
+```
+Read PLAN.md. Implement Task 2.3:
+
+Create /services/imageCompression.ts:
+
+Define a tunable constant at the top:
+  export const COMPRESSION_TARGET_KB = 180; // tune between 150-200KB
+
+Export compressImage(uri): resize to max 1600px width, JPEG quality 0.6.
+If result > COMPRESSION_TARGET_KB * 1.1, reduce quality by 0.05 and retry
+(max 3 retries). Return { uri, base64, sizeKB }.
+
+The original photo is NEVER overwritten — compression produces a separate file.
+Both paths are stored in SQLite (original_image_path + compressed_image_path).
+Mark Task 2.3 as DONE in PLAN.md.
+```
+
+---
+
+### Phase 3: Local Storage & Network Detection
+
+#### Task 3.1 — SQLite Database
+```
+Read PLAN.md. Implement Task 3.1:
+
+Install expo-sqlite. Create /services/database.ts with initDatabase() that
+creates tables: sessions, records, sync_queue, patients (use the SQLite
+schema from the implementation plan). Call in root layout useEffect.
+
+Create /services/sessionRepository.ts: createSession, getActiveSession,
+endSession, getSessionsByDate.
+
+Create /services/recordRepository.ts: createRecord (saves both
+original_image_path and compressed_image_path), getRecordsBySession,
+getPendingSyncRecords, updateRecordStatus, updateRecordCorrections.
+
+All async using expo-sqlite async API.
+Mark Task 3.1 as DONE in PLAN.md.
+```
+
+#### Task 3.2 — Network State Detection
+```
+Read PLAN.md. Implement Task 3.2:
+
+Install @react-native-community/netinfo.
+Create /hooks/useNetworkState.ts: returns { isOnline, connectionType }.
+"Online" only when isConnected && isInternetReachable.
+
+Create /contexts/NetworkContext.tsx: wrap root layout with <NetworkProvider>.
+
+Create native /components/StatusBar.tsx: green "Online" / amber "Offline".
+
+Replace ALL hardcoded isOnline toggles with NetworkContext.
+Mark Task 3.2 as DONE in PLAN.md.
+```
+
+#### Task 3.3 — Offline Queue Manager
+```
+Read PLAN.md. Implement Task 3.3:
+
+Create /services/offlineQueue.ts:
+- enqueuePhoto(sessionId, originalUri):
+  1. Save original to document dir (already done in Task 2.2)
+  2. Compress (Task 2.3) → save compressed copy
+  3. Create record in SQLite with BOTH paths, status='pending_sync'
+  4. Add to sync_queue
+  5. Return record ID
+
+- getQueueStats(): { pendingCount, totalSizeKB }
+- getQueueItems(): all pending_sync records
+
+Create /hooks/useOfflineQueue.ts: enqueue(), queueCount, isProcessing.
+
+Wire into Active Session: offline + confirm → enqueue → OfflineSnapToast.
+
+IMPORTANT: The doctor can always tap a queued record to VIEW the original
+photo from local storage, even before sync or AI extraction.
+Mark Task 3.3 as DONE in PLAN.md.
+```
+
+---
+
+### Phase 4: Supabase Backend & Sync
+
+#### Task 4.1 — Supabase Client & Auth
+```
+Read PLAN.md. Implement Task 4.1:
+
+Install @supabase/supabase-js, expo-secure-store.
+Create /lib/supabase.ts: initialize client with SecureStore adapter.
+
+Create /services/auth.ts: signIn, signUp (+ insert doctors row),
+signOut, getSession, onAuthStateChange.
+
+Create /app/(auth)/login.tsx: email + password, Sign In button.
+Update /app/_layout.tsx: auth guard (show auth group if not logged in).
+Mark Task 4.1 as DONE in PLAN.md.
+```
+
+#### Task 4.2 — Cloud DB & RLS Migrations
+```
+Read PLAN.md. Implement Task 4.2:
+
+Create /supabase/migrations/001_initial_schema.sql: all CREATE TABLE
+statements from the plan + indexes on patient_code, doctor_id,
+session_id, status.
+
+Create /supabase/migrations/002_rls_policies.sql: enable RLS on all tables.
+Doctors read/update own row. Patients readable by same-clinic doctors.
+Sessions/Records CRUD for own doctor_id only.
+
+Create /supabase/migrations/003_storage_buckets.sql: 'scan-images' bucket,
+10MB max, scoped upload/read policies.
+Mark Task 4.2 as DONE in PLAN.md.
+```
+
+#### Task 4.3 — Cloud Sync Service
+```
+Read PLAN.md. Implement Task 4.3:
+
+Create /services/cloudSync.ts:
+- uploadImage(record): upload COMPRESSED image to Storage at
+  scan-images/{doctor_id}/{session_id}/{record_id}.jpg.
+  Update Supabase records row with image_url. Update local SQLite:
+  status='pending_extraction', synced_at=now.
+
+- syncAllPending(): process sync_queue sequentially. On failure:
+  retry_count++, max 5 retries then 'failed'. Return { synced, failed }.
+
+- upsertSession(localSession): sync session to Supabase.
+
+Create /services/backgroundSync.ts: startSyncWorker() listens to NetInfo.
+On connectivity restored → syncAllPending(). Debounced, no duplicate runs.
+Start in root _layout.tsx on launch.
+Mark Task 4.3 as DONE in PLAN.md.
+```
+
+#### Task 4.4 — Patient Lookup
+```
+Read PLAN.md. Implement Task 4.4:
+
+Create /services/patientService.ts:
+- lookupPatient(code): online → Supabase query, offline → local SQLite.
+- cachePatientLocally(patient): insert/update local patients table.
+- registerPatient(code, name, dob, gender, clinicId): insert Supabase + cache.
+
+Update QR flow: after scan → lookupPatient(code).
+If found: show name, proceed. If not found: "New Patient" mini-form.
+Mark Task 4.4 as DONE in PLAN.md.
+```
+
+---
+
+### Phase 5: Gemini AI Integration
+
+#### Task 5.1 — Gemini API Client
+```
+Read PLAN.md. Implement Task 5.1:
+
+Create /services/geminiService.ts:
+- extractHandwriting(imageBase64): call Gemini 2.5 Flash Vision.
+  System prompt instructs return of JSON: { fields: [{ label, value,
+  confidence }], overallConfidence, predictionScore }.
+  Illegible fields get "(?)". Parse response JSON.
+  On parse failure: return { error: true, confidence: 0 }.
+  Timeout: 15 seconds.
+
+Define types in /lib/types.ts: ExtractionResult, ExtractionField.
+GEMINI_API_KEY via expo-constants env var.
+Mark Task 5.1 as DONE in PLAN.md.
+```
+
+#### Task 5.2 — Online Flow (Optimistic UI)
+```
+Read PLAN.md. Implement Task 5.2:
+
+CRITICAL DESIGN: Do NOT block the doctor with a 10-second spinner.
+
+Online capture flow:
+1. Doctor confirms photo → immediately show "✅ Saved! AI is analyzing
+   in the background…" flash with a subtle progress indicator
+2. Save the record to SQLite (status='pending_extraction')
+3. Compress + upload to Supabase Storage in background
+4. Call Gemini API in background
+5. When AI result arrives:
+   a. If confidence ≥ 80%: auto-approve, update record, show a small
+      in-app notification "AI verified: Amoxicillin 500mg ✓"
+   b. If confidence < 80%: show a pop-up card asking doctor to review
+      the extracted data (editable fields + approve button)
+   c. Doctor can dismiss and review later from the Queue tab
+6. Meanwhile, the doctor can IMMEDIATELY capture the next photo or
+   end the session — they are never blocked.
+
+Fallback: if API fails/timeout → silently save for offline queue.
+Mark Task 5.2 as DONE in PLAN.md.
+```
+
+#### Task 5.3 — Offline Flow & Background Extraction
+```
+Read PLAN.md. Implement Task 5.3:
+
+Create Supabase Edge Function /supabase/functions/extract-handwriting:
+- Input: { record_id }
+- Download image from Storage, call Gemini API (server-side GEMINI_API_KEY)
+- Save extracted_data + confidence to records table
+- If confidence < 80: status='needs_review', flagged_reason=explanation
+- If confidence ≥ 80: status='approved'
+
+Update cloudSync.ts: after image upload, call the Edge Function.
+
+Update Review Queue: fetch records where status='needs_review' from
+Supabase (replace mock data). On doctor submit: update corrections,
+set status='approved'. Auto-refresh on sync completion.
+
+IMPORTANT: Original photos are always viewable from local storage.
+Doctor can tap any queued/synced record to see the high-res original.
+Mark Task 5.3 as DONE in PLAN.md.
+```
+
+#### Task 5.4 — History, Analytics & Final Polish
+```
+Read PLAN.md. Implement Task 5.4:
+
+Wire History tab to real data:
+- Online: fetch today's records from Supabase (join sessions + patients)
+- Offline: fall back to local SQLite
+- Derive status: ai-realtime / auto-synced / doctor-reviewed
+
+Wire Dashboard stats: todayCount, pendingCount, aiAccuracy.
+
+Add pull-to-refresh on all list screens.
+Add haptic feedback (expo-haptics): light on QR success, medium on
+shutter, success on approve.
+Add loading skeletons for data-fetching screens.
+
+Test full E2E:
+- Online: QR → session → capture → optimistic save → bg AI → confirm → history
+- Offline: QR → session → capture → local save → reconnect → sync →
+  extraction → review queue → verify → history
+Mark Task 5.4 as DONE in PLAN.md.
+```
+
+---
+
+## Verification Plan
+
+### Automated Tests
+- **Unit** (Jest): compression `estimateSize()`, Gemini JSON parsing, repository CRUD against in-memory SQLite
+- **Component** (RN Testing Library): Dashboard props, QR permission states, Queue navigation
+- Run: `npx jest --watchAll=false`
+
+### Manual Testing (Physical Device Required)
+1. **QR Scan**: Print QR → scan → verify patient loads
+2. **Photo Capture**: Shoot handwritten notes → verify original saved + compressed ~150-200KB
+3. **Online Optimistic Flow**: Capture → verify "Saved! AI processing…" instant flash → verify result notification arrives → approve → history
+4. **Offline Flow**: Airplane mode → capture → toast → re-enable Wi-Fi → verify sync → check Review Queue
+5. **Original Photo Access**: While offline, tap any queued record → verify original full-res photo is viewable
+6. **Review Queue**: Review flagged record → edit → submit → verify approved

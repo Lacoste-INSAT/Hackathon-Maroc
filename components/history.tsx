@@ -4,7 +4,7 @@ import { ArrowLeft, User, Wifi, WifiOff, AlertTriangle, FileText } from "lucide-
 import { Card, CardContent } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
 import { cn } from "@/lib/utils"
-import { type HistoryStatus, type HistoryEntry } from "@/lib/mock-data"
+import { type HistoryStatus, type HistoryEntry } from "@/lib/types"
 
 interface HistoryProps {
   entries: HistoryEntry[]
