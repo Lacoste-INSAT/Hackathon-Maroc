@@ -10,10 +10,11 @@ import {
   RefreshControl,
   ActivityIndicator,
   Dimensions,
+  Platform,
 } from 'react-native';
 import { useRouter } from 'expo-router';
 import Svg, { Defs, RadialGradient, Stop, Circle, Rect, Filter, FeGaussianBlur } from 'react-native-svg';
-import FontAwesome6 from '@expo/vector-icons/FontAwesome6';
+import { Ionicons } from '@expo/vector-icons';
 
 import { colors, spacing, borderRadius } from '@/lib/theme';
 import { Text } from '@/components/ui/Text';
@@ -148,10 +149,10 @@ export default function DashboardScreen() {
         {/* ── Header ─────────────────────────────────────────── */}
         <View style={styles.header}>
           <View style={styles.headerLeft}>
-            <Text weight="ExtraBold" style={styles.greeting}>
-              {getGreeting()},{'\n'}
-              <Text weight="ExtraBold" style={styles.doctorName}>Dr. Benali</Text>
+            <Text weight="SemiBold" style={styles.greeting}>
+              {getGreeting()},
             </Text>
+            <Text weight="Bold" style={styles.doctorName}>Dr. Benali</Text>
             <Text weight="Medium" style={styles.subtitle}>CHU Rural Clinic — Tizi Ouzou</Text>
           </View>
 
@@ -182,7 +183,7 @@ export default function DashboardScreen() {
           <Card variant="warning" style={styles.offlineCard}>
             <CardContent style={styles.offlineContent}>
               <View style={styles.offlineRow}>
-                <FontAwesome6 name="tower-broadcast" size={22} color={colors.warning} />
+                <Ionicons name="cloud-offline-outline" size={24} color={colors.warning} />
                 <View style={styles.offlineText}>
                   <Text weight="Bold" style={styles.offlineTitle}>You're Offline</Text>
                   <Text style={styles.offlineDesc}>
@@ -203,11 +204,11 @@ export default function DashboardScreen() {
             onPress={() => {
               router.push('/session/new');
             }}
-            variant="primary"
+            variant="success"
             size="xl"
             style={styles.startButton}
             icon={
-              <FontAwesome6
+              <Ionicons
                 name="camera"
                 size={22}
                 color={colors.primaryForeground}
@@ -230,10 +231,10 @@ export default function DashboardScreen() {
         ) : (
           <View style={styles.statsRow}>
             {/* Today's Patients */}
-            <Card style={styles.statCard} variant="primary">
+            <Card style={styles.statCard} variant="default">
               <CardContent style={styles.statContent}>
                 <View style={[styles.statIcon, { backgroundColor: colors.primaryLight }]}>
-                  <FontAwesome6 name="users" size={20} color={colors.primary} />
+                  <Ionicons name="people" size={22} color={colors.primary} />
                 </View>
                 <Text weight="ExtraBold" style={styles.statNumber}>{todayPatients}</Text>
                 <Text weight="SemiBold" style={styles.statLabel}>Patients{'\n'}Today</Text>
@@ -255,8 +256,8 @@ export default function DashboardScreen() {
                     },
                   ]}
                 >
-                  <FontAwesome6
-                    name="cloud-arrow-up"
+                  <Ionicons
+                    name="cloud-upload"
                     size={20}
                     color={pendingSyncs > 0 ? colors.warning : colors.primary}
                   />
@@ -267,10 +268,10 @@ export default function DashboardScreen() {
             </Card>
 
             {/* AI Accuracy */}
-            <Card style={styles.statCard} variant="primary">
+            <Card style={styles.statCard} variant="default">
               <CardContent style={styles.statContent}>
                 <View style={[styles.statIcon, { backgroundColor: colors.primaryLight }]}>
-                  <FontAwesome6 name="wand-magic-sparkles" size={20} color={colors.primary} />
+                  <Ionicons name="sparkles" size={20} color={colors.primary} />
                 </View>
                 <Text weight="ExtraBold" style={styles.statNumber}>
                   {avgConfidence > 0 ? `${avgConfidence}%` : '—'}
@@ -283,7 +284,7 @@ export default function DashboardScreen() {
 
         {/* ── Last Sync Info ─────────────────────────────────── */}
         <View style={styles.lastSyncRow}>
-          <FontAwesome6 name="arrows-rotate" size={14} color={colors.mutedForeground} />
+          <Ionicons name="sync" size={14} color={colors.mutedForeground} />
           <Text weight="Medium" style={styles.lastSyncText}>
             Last sync: {formatRelativeTime(lastSyncAt)}
           </Text>
@@ -302,7 +303,7 @@ export default function DashboardScreen() {
             variant="outline"
             size="md"
             style={styles.actionButton}
-            icon={<FontAwesome6 name="clock-rotate-left" size={18} color={colors.foreground} />}
+            icon={<Ionicons name="time-outline" size={18} color={colors.foreground} />}
           >
             View History
           </Button>
@@ -312,8 +313,8 @@ export default function DashboardScreen() {
             size="md"
             style={styles.actionButton}
             icon={
-              <FontAwesome6
-                name="list-check"
+              <Ionicons
+                name="list"
                 size={18}
                 color={colors.foreground}
               />
@@ -335,7 +336,7 @@ const styles = StyleSheet.create({
     backgroundColor: colors.background,
   },
   content: {
-    paddingTop: 104,
+    paddingTop: Platform.OS === 'ios' ? 120 : 100,
     paddingHorizontal: spacing.lg,
     paddingBottom: 40,
   },
@@ -351,15 +352,15 @@ const styles = StyleSheet.create({
     flex: 1,
   },
   greeting: {
-    fontSize: 32,
+    fontSize: 20,
     color: colors.foreground,
-    lineHeight: 38,
-    letterSpacing: -0.5,
+    lineHeight: 28,
   },
   doctorName: {
-    color: colors.primary,
-    fontSize: 32,
+    color: colors.foreground,
+    fontSize: 28,
     letterSpacing: -0.5,
+    marginTop: -4,
   },
   subtitle: {
     fontSize: 16,
@@ -427,10 +428,10 @@ const styles = StyleSheet.create({
     // Subtle 3D Depth
     transform: [{ perspective: 1000 }, { rotateX: '5deg' }, { rotateY: '-12deg' }],
     marginBottom: 32,
-    shadowColor: '#4F46E5',
-    shadowOffset: { width: 10, height: 15 },
-    shadowOpacity: 0.25,
-    shadowRadius: 20,
+    shadowColor: '#1E1B4B', // Very dark indigo for natural depth
+    shadowOffset: { width: 0, height: 12 },
+    shadowOpacity: 0.15,
+    shadowRadius: 24,
     elevation: 10,
     borderRadius: borderRadius.md,
   },
@@ -469,15 +470,15 @@ const styles = StyleSheet.create({
     marginBottom: spacing.sm,
   },
   statNumber: {
-    fontSize: 26,
+    fontSize: 24,
     color: colors.foreground,
-    marginBottom: 2,
+    marginBottom: 4,
   },
   statLabel: {
-    fontSize: 11,
+    fontSize: 12,
     color: colors.mutedForeground,
     textAlign: 'center',
-    lineHeight: 14,
+    lineHeight: 16,
   },
 
   // Last sync
@@ -487,11 +488,6 @@ const styles = StyleSheet.create({
     gap: spacing.sm,
     marginBottom: spacing.xxl,
     paddingVertical: spacing.sm,
-    paddingHorizontal: spacing.md,
-    backgroundColor: '#fff',
-    borderRadius: borderRadius.sm,
-    borderWidth: 1,
-    borderColor: colors.border,
   },
   lastSyncText: {
     fontSize: 12,

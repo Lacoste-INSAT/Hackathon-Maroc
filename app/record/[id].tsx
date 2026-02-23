@@ -8,6 +8,7 @@ import { Card, CardContent } from '@/components/ui/Card';
 import { Badge } from '@/components/ui/Badge';
 import { getRecordById } from '@/services/recordRepository';
 import { getSessionById } from '@/services/sessionRepository';
+import { formatName, formatCode } from '@/lib/stringUtils';
 import type { Record as DBRecord, ExtractionResult, Session } from '@/lib/types';
 
 export default function RecordDetailScreen() {
@@ -100,8 +101,8 @@ export default function RecordDetailScreen() {
 
       <ScrollView style={styles.scroll} contentContainerStyle={styles.scrollContent}>
         <View style={styles.patientInfo}>
-          <Text style={styles.patientName}>{session?.patient_name || 'Unknown Patient'}</Text>
-          <Text style={styles.patientCode}>{session?.patient_code || '—'}</Text>
+          <Text style={styles.patientName}>{formatName(session?.patient_name)}</Text>
+          <Text style={styles.patientCode}>{formatCode(session?.patient_code)}</Text>
           <Text style={styles.dateText}>
             Captured: {new Date(record.created_at).toLocaleString()}
           </Text>
@@ -111,7 +112,7 @@ export default function RecordDetailScreen() {
           <Image
             source={{ uri: record.original_image_path }}
             style={styles.image}
-            resizeMode="contain"
+            resizeMode="cover"
           />
         </Card>
 

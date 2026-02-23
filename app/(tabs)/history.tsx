@@ -27,6 +27,7 @@ import { Card, CardContent } from '@/components/ui/Card';
 import { Badge } from '@/components/ui/Badge';
 import { Text } from '@/components/ui/Text';
 import { getDatabase } from '@/services/database';
+import { formatName, formatCode } from '@/lib/stringUtils';
 import type { HistoryEntry, HistoryStatus } from '@/lib/types';
 
 // ── Helpers ──────────────────────────────────────────────────
@@ -119,15 +120,19 @@ async function fetchHistory(): Promise<HistoryEntry[]> {
     []
   );
 
-  return rows.map((row) => ({
-    id: row.id,
-    patient: row.patient_name ?? row.patient_code,
-    patientId: row.patient_code,
-    time: formatTime(row.created_at),
-    notesCount: row.notes_count,
-    status: deriveStatus(row.record_status, row.has_corrections === 1),
-    confidence: row.overall_confidence ?? 0,
-  }));
+  return rows.map((row) => {
+    const fn = formatName(row.patient_name);
+    const fc = formatCode(row.patient_code);
+    return {
+      id: row.id,
+      patient: fn !== 'Unknown Patient' ? fn : (fc !== '—' ? fc : 'Unknown Patient'),
+      patientId: fc,
+      time: formatTime(row.created_at),
+      notesCount: row.notes_count,
+      status: deriveStatus(row.record_status, row.has_corrections === 1),
+      confidence: row.overall_confidence ?? 0,
+    };
+  });
 }
 
 /** Compute summary counts from history entries */
@@ -421,7 +426,6 @@ const styles = StyleSheet.create({
   },
   title: {
     fontSize: fontSize.xxl,
-    fontWeight: fontWeight.bold,
     color: colors.foreground,
   },
   subtitle: {
@@ -550,7 +554,8 @@ const styles = StyleSheet.create({
 
   // Right column
   rightCol: {
-    alignItems: 'flex-end',
+    flexDirection: 'row',
+    alignItems: 'center',
     gap: spacing.xs,
   },
   confidencePill: {

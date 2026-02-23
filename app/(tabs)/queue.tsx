@@ -22,6 +22,7 @@ import {
   Dimensions,
   Platform,
   Alert,
+  TouchableOpacity,
   type ListRenderItemInfo,
 } from 'react-native';
 import * as Haptics from 'expo-haptics';
@@ -51,6 +52,7 @@ import { Card, CardContent } from '@/components/ui/Card';
 import { Badge } from '@/components/ui/Badge';
 import { Button } from '@/components/ui/Button';
 import { Text } from '@/components/ui/Text';
+import { formatName, formatCode } from '@/lib/stringUtils';
 
 // ── Constants ───────────────────────────────────────────────
 const SCREEN_WIDTH = Dimensions.get('window').width;
@@ -136,8 +138,8 @@ export default function QueueScreen() {
             originalImagePath = record.original_image_path;
             const session = await getSessionById(record.session_id);
             if (session) {
-              patientName = session.patient_name ?? 'Unknown';
-              patientCode = session.patient_code;
+              patientName = formatName(session.patient_name);
+              patientCode = formatCode(session.patient_code);
             }
           }
         } catch (e) {}
@@ -252,8 +254,8 @@ export default function QueueScreen() {
           try {
             const session = await getSessionById(rec.session_id);
             if (session) {
-              patientName = session.patient_name ?? 'Unknown Patient';
-              patientCode = session.patient_code;
+              patientName = formatName(session.patient_name);
+              patientCode = formatCode(session.patient_code);
             }
           } catch {
             // defaults
@@ -330,23 +332,37 @@ export default function QueueScreen() {
       <View style={styles.header}>
         <Text weight="Bold" style={styles.title}>Queue</Text>
         
-        <View style={styles.tabRow}>
-          <Button
-            variant={activeTab === 'review' ? 'primary' : 'ghost'}
-            size="sm"
-            style={styles.tabButton}
+        <View style={styles.segmentedControl}>
+          <TouchableOpacity
+            style={[styles.segment, activeTab === 'review' && styles.segmentActive]}
             onPress={() => setActiveTab('review')}
+            activeOpacity={0.8}
           >
-            {`Needs Review (${records.length})`}
-          </Button>
-          <Button
-            variant={activeTab === 'failed' ? 'primary' : 'ghost'}
-            size="sm"
-            style={styles.tabButton}
+            <Text
+              weight={activeTab === 'review' ? 'SemiBold' : 'Medium'}
+              style={[
+                styles.segmentText,
+                activeTab === 'review' ? styles.segmentTextActive : null,
+              ]}
+            >
+              Needs Review ({records.length})
+            </Text>
+          </TouchableOpacity>
+          <TouchableOpacity
+            style={[styles.segment, activeTab === 'failed' && styles.segmentActive]}
             onPress={() => setActiveTab('failed')}
+            activeOpacity={0.8}
           >
-            {`Failed Syncs (${failedItems.length})`}
-          </Button>
+            <Text
+              weight={activeTab === 'failed' ? 'SemiBold' : 'Medium'}
+              style={[
+                styles.segmentText,
+                activeTab === 'failed' ? styles.segmentTextActive : null,
+              ]}
+            >
+              Failed Syncs ({failedItems.length})
+            </Text>
+          </TouchableOpacity>
         </View>
       </View>
 
@@ -588,7 +604,7 @@ function DetailView({
           <Image
             source={{ uri: record.original_image_path }}
             style={styles.detailImage}
-            resizeMode="contain"
+            resizeMode="cover"
           />
         </Card>
 
@@ -715,6 +731,8 @@ function FieldEditor({ field, index, onUpdate }: FieldEditorProps) {
           onChangeText={(text) => onUpdate(index, text)}
           placeholder={field.label}
           placeholderTextColor={colors.mutedForeground}
+          multiline={true}
+          textAlignVertical="top"
         />
 
         {/* Show original if edited */}
@@ -854,7 +872,6 @@ const styles = StyleSheet.create({
   },
   title: {
     fontSize: fontSize.xxl,
-    fontWeight: fontWeight.bold,
     color: colors.foreground,
   },
   subtitle: {
@@ -862,13 +879,29 @@ const styles = StyleSheet.create({
     color: colors.mutedForeground,
     marginTop: spacing.xs,
   },
-  tabRow: {
+  segmentedControl: {
     flexDirection: 'row',
-    marginTop: spacing.sm,
-    gap: spacing.sm,
+    backgroundColor: colors.muted,
+    borderRadius: borderRadius.lg,
+    padding: 4,
+    marginTop: spacing.md,
   },
-  tabButton: {
+  segment: {
     flex: 1,
+    paddingVertical: 8,
+    alignItems: 'center',
+    borderRadius: borderRadius.md,
+  },
+  segmentActive: {
+    backgroundColor: colors.card,
+    ...shadow.sm,
+  },
+  segmentText: {
+    fontSize: fontSize.sm,
+    color: colors.mutedForeground,
+  },
+  segmentTextActive: {
+    color: colors.foreground,
   },
 
   // ── List view ──
@@ -1067,13 +1100,13 @@ const styles = StyleSheet.create({
     borderRadius: 2,
   },
   fieldInput: {
-    height: 44,
+    minHeight: 44,
     borderWidth: 1,
     borderColor: colors.border,
     borderRadius: borderRadius.sm,
     paddingHorizontal: spacing.md,
+    paddingVertical: spacing.sm,
     fontSize: fontSize.md,
-    fontWeight: fontWeight.medium,
     color: colors.foreground,
     backgroundColor: colors.card,
   },

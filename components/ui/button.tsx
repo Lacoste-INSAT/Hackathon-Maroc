@@ -57,9 +57,17 @@ export function Button({
         style,
       ]}
     >
-      {isPrimary && (
+      {variant === 'success' && (
         <LinearGradient
-          colors={[colors.primary, '#7C3AED']}
+          colors={[colors.success, '#6D28D9']}
+          start={{ x: 0, y: 0 }}
+          end={{ x: 1, y: 1 }}
+          style={[StyleSheet.absoluteFill, { borderRadius: borderRadius.md }]}
+        />
+      )}
+      {variant === 'primary' && (
+        <LinearGradient
+          colors={[colors.primary, '#3730A3']}
           start={{ x: 0, y: 0 }}
           end={{ x: 1, y: 1 }}
           style={[StyleSheet.absoluteFill, { borderRadius: borderRadius.md }]}
@@ -133,9 +141,7 @@ const bgVariants: Record<ButtonVariant, ViewStyle> = {
   ghost: {
     backgroundColor: 'transparent',
   },
-  success: {
-    backgroundColor: colors.success,
-  },
+  success: {}, // Handled by gradient
   destructive: {
     backgroundColor: colors.destructive,
   },

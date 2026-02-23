@@ -4,22 +4,22 @@
 
 export const colors = {
   // ── Core palette ──
-  primary: '#4F46E5',           // Indigo 600
+  primary: '#4F46E5',           // Muted Purple
   primaryForeground: '#ffffff',
   primaryLight: 'rgba(79, 70, 229, 0.12)',
 
   // ── Semantic ──
-  success: '#10B981',           // Emerald 500
+  success: '#8B5CF6',           // Violet 500 (Cohesive Accent)
   successForeground: '#ffffff',
-  successLight: 'rgba(16, 185, 129, 0.12)',
+  successLight: 'rgba(139, 92, 246, 0.12)',
 
   warning: '#F59E0B',           // Amber 500
   warningForeground: '#92400E',
   warningLight: 'rgba(245, 158, 11, 0.12)',
 
-  destructive: '#EF4444',       // Red 500
+  destructive: '#FF3B30',       // Vibrant Red
   destructiveForeground: '#ffffff',
-  destructiveLight: 'rgba(239, 68, 68, 0.12)',
+  destructiveLight: 'rgba(255, 59, 48, 0.12)',
 
   // ── Surfaces ──
   background: '#F8FAFC',        // Slate 50
@@ -74,25 +74,25 @@ export const fontWeight = {
 
 export const shadow = {
   sm: {
-    shadowColor: '#4F46E5',
-    shadowOffset: { width: 0, height: 2 },
+    shadowColor: '#000000',
+    shadowOffset: { width: 0, height: 1 },
     shadowOpacity: 0.05,
-    shadowRadius: 4,
+    shadowRadius: 3,
     elevation: 2,
   },
   md: {
-    shadowColor: '#4F46E5',
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.15,
-    shadowRadius: 12,
-    elevation: 4,
+    shadowColor: '#000000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.05,
+    shadowRadius: 6,
+    elevation: 3,
   },
   lg: {
-    shadowColor: '#4F46E5',
-    shadowOffset: { width: 0, height: 10 },
-    shadowOpacity: 0.15,
-    shadowRadius: 25,
-    elevation: 8,
+    shadowColor: '#000000',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.05,
+    shadowRadius: 10,
+    elevation: 5,
   },
 } as const;
 
