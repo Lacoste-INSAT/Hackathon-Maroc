@@ -1,10 +1,7 @@
-// ─────────────────────────────────────────────────────────────
-// Snap & Sync — Native Badge Component
-// ─────────────────────────────────────────────────────────────
-
 import React from 'react';
-import { View, Text, StyleSheet, type ViewStyle, type TextStyle } from 'react-native';
-import { colors, borderRadius, spacing, fontSize, fontWeight } from '@/lib/theme';
+import { View, StyleSheet, type ViewStyle, type TextStyle } from 'react-native';
+import { colors, borderRadius, spacing } from '@/lib/theme';
+import { Text } from '@/components/ui/Text';
 
 type BadgeVariant = 'default' | 'success' | 'warning' | 'destructive' | 'outline';
 
@@ -26,7 +23,7 @@ export function Badge({
   return (
     <View style={[styles.badge, variantBg, style]}>
       {typeof children === 'string' ? (
-        <Text style={[styles.badgeText, variantText, textStyle]}>{children}</Text>
+        <Text weight="SemiBold" style={[styles.badgeText, variantText, textStyle]}>{children}</Text>
       ) : (
         children
       )}
@@ -45,8 +42,7 @@ const styles = StyleSheet.create({
     gap: 4,
   },
   badgeText: {
-    fontSize: fontSize.sm,
-    fontWeight: fontWeight.semibold,
+    fontSize: 12,
   },
 });
 
@@ -57,17 +53,17 @@ const bgStyles: Record<BadgeVariant, ViewStyle> = {
   success: {
     backgroundColor: colors.successLight,
     borderWidth: 1,
-    borderColor: 'rgba(22,163,74,0.2)',
+    borderColor: 'rgba(16, 185, 129, 0.2)',
   },
   warning: {
     backgroundColor: colors.warningLight,
     borderWidth: 1,
-    borderColor: 'rgba(245,158,11,0.2)',
+    borderColor: 'rgba(245, 158, 11, 0.2)',
   },
   destructive: {
     backgroundColor: colors.destructiveLight,
     borderWidth: 1,
-    borderColor: 'rgba(239,68,68,0.2)',
+    borderColor: 'rgba(239, 68, 68, 0.2)',
   },
   outline: {
     backgroundColor: colors.card,

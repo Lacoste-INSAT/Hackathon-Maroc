@@ -22,6 +22,14 @@ import { Stack } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
 import { View, Text, StyleSheet } from 'react-native';
 import * as SplashScreen from 'expo-splash-screen';
+import {
+  useFonts,
+  PlusJakartaSans_400Regular,
+  PlusJakartaSans_500Medium,
+  PlusJakartaSans_600SemiBold,
+  PlusJakartaSans_700Bold,
+  PlusJakartaSans_800ExtraBold,
+} from '@expo-google-fonts/plus-jakarta-sans';
 
 // Prevent the splash screen from auto-hiding before asset loading is complete.
 SplashScreen.preventAutoHideAsync();
@@ -35,6 +43,13 @@ import { useSyncStore } from '@/stores/useSyncStore';
 import { colors } from '@/lib/theme';
 
 export default function RootLayout() {
+  const [fontsLoaded] = useFonts({
+    PlusJakartaSans_400Regular,
+    PlusJakartaSans_500Medium,
+    PlusJakartaSans_600SemiBold,
+    PlusJakartaSans_700Bold,
+    PlusJakartaSans_800ExtraBold,
+  });
   const [isDbReady, setIsDbReady] = useState(false);
   const [initError, setInitError] = useState<string | null>(null);
   const stopWorkerRef = useRef<(() => void) | null>(null);
@@ -87,10 +102,10 @@ export default function RootLayout() {
 
   // Hide splash screen once database is fully ready
   useEffect(() => {
-    if (isDbReady) {
+    if (isDbReady && fontsLoaded) {
       SplashScreen.hideAsync();
     }
-  }, [isDbReady]);
+  }, [isDbReady, fontsLoaded]);
 
   // ── Step 3: Render ─────────────────────────────────────────
 
@@ -110,7 +125,7 @@ export default function RootLayout() {
   // DB still initializing — return null to prevent router tree evaluation
   // expo-router handles splash screen hiding automatically when the first layout mounts,
   // but since we are delaying it here, we should ensure the tree isn't evaluated.
-  if (!isDbReady) {
+  if (!isDbReady || !fontsLoaded) {
     return null;
   }
 

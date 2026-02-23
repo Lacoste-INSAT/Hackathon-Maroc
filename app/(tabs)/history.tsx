@@ -5,7 +5,6 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import {
   View,
-  Text,
   StyleSheet,
   FlatList,
   RefreshControl,
@@ -26,6 +25,7 @@ import {
 } from '@/lib/theme';
 import { Card, CardContent } from '@/components/ui/Card';
 import { Badge } from '@/components/ui/Badge';
+import { Text } from '@/components/ui/Text';
 import { getDatabase } from '@/services/database';
 import type { HistoryEntry, HistoryStatus } from '@/lib/types';
 
@@ -194,14 +194,14 @@ export default function HistoryScreen() {
             <CardContent style={styles.listItemContent}>
               {/* Patient avatar */}
               <View style={styles.avatar}>
-                <Text style={styles.avatarText}>
+                <Text weight="Bold" style={styles.avatarText}>
                   {getInitials(item.patient)}
                 </Text>
               </View>
 
               {/* Patient info */}
               <View style={styles.patientInfo}>
-                <Text style={styles.patientName} numberOfLines={1}>
+                <Text weight="SemiBold" style={styles.patientName} numberOfLines={1}>
                   {item.patient}
                 </Text>
                 <View style={styles.metaRow}>
@@ -238,7 +238,7 @@ export default function HistoryScreen() {
                       },
                     ]}
                   >
-                    <Text style={[styles.confidenceText, { color: confBg.text }]}>
+                    <Text weight="Bold" style={[styles.confidenceText, { color: confBg.text }]}>
                       {item.confidence}%
                     </Text>
                   </View>
@@ -263,7 +263,7 @@ export default function HistoryScreen() {
           size={56}
           color={colors.border}
         />
-        <Text style={styles.emptyTitle}>No Records Yet</Text>
+        <Text weight="SemiBold" style={styles.emptyTitle}>No Records Yet</Text>
         <Text style={styles.emptyDesc}>
           Start a new session to capture patient documents.{'\n'}They'll appear
           here automatically.
@@ -278,8 +278,8 @@ export default function HistoryScreen() {
     <View>
       {/* ── Page Header ──────────────────────────────────── */}
       <View style={styles.headerSection}>
-        <Text style={styles.title}>History</Text>
-        <Text style={styles.subtitle}>
+        <Text weight="Bold" style={styles.title}>History</Text>
+        <Text weight="Medium" style={styles.subtitle}>
           {entries.length > 0
             ? `${entries.length} record${entries.length !== 1 ? 's' : ''} captured`
             : "Today's session records"}
@@ -326,7 +326,7 @@ export default function HistoryScreen() {
     return (
       <View style={[styles.screen, styles.centered]}>
         <ActivityIndicator size="large" color={colors.primary} />
-        <Text style={styles.loadingText}>Loading records…</Text>
+        <Text weight="Medium" style={styles.loadingText}>Loading records…</Text>
       </View>
     );
   }
@@ -375,8 +375,8 @@ function SummaryCard({
         <View style={[styles.summaryIcon, { backgroundColor: bg }]}>
           <Ionicons name={icon} size={18} color={color} />
         </View>
-        <Text style={styles.summaryCount}>{count}</Text>
-        <Text style={styles.summaryLabel} numberOfLines={1}>
+        <Text weight="Bold" style={styles.summaryCount}>{count}</Text>
+        <Text weight="Medium" style={styles.summaryLabel} numberOfLines={1}>
           {label}
         </Text>
       </CardContent>
@@ -388,7 +388,7 @@ function LegendPill({ color, label }: { color: string; label: string }) {
   return (
     <View style={styles.legendPill}>
       <View style={[styles.legendDot, { backgroundColor: color }]} />
-      <Text style={styles.legendText}>{label}</Text>
+      <Text weight="Medium" style={styles.legendText}>{label}</Text>
     </View>
   );
 }

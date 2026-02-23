@@ -1,26 +1,22 @@
 // ─────────────────────────────────────────────────────────────
-// Snap & Sync — Dashboard Screen (Task 1.3 + 5.4 data wiring)
+// Snap & Sync — Dashboard Screen (Corporate Trust)
 // ─────────────────────────────────────────────────────────────
 
 import React, { useState, useEffect, useCallback } from 'react';
 import {
   View,
-  Text,
   StyleSheet,
   ScrollView,
   RefreshControl,
   ActivityIndicator,
+  Dimensions,
 } from 'react-native';
 import { useRouter } from 'expo-router';
-import { Ionicons } from '@expo/vector-icons';
-import {
-  colors,
-  spacing,
-  borderRadius,
-  fontSize,
-  fontWeight,
-  shadow,
-} from '@/lib/theme';
+import Svg, { Defs, RadialGradient, Stop, Circle, Rect, Filter, FeGaussianBlur } from 'react-native-svg';
+import FontAwesome6 from '@expo/vector-icons/FontAwesome6';
+
+import { colors, spacing, borderRadius } from '@/lib/theme';
+import { Text } from '@/components/ui/Text';
 import { Card, CardContent } from '@/components/ui/Card';
 import { Button } from '@/components/ui/Button';
 import { Badge } from '@/components/ui/Badge';
@@ -41,7 +37,7 @@ function getGreeting(): string {
 }
 
 function getTodayStr(): string {
-  return new Date().toISOString().slice(0, 10); // 'YYYY-MM-DD'
+  return new Date().toISOString().slice(0, 10);
 }
 
 function formatRelativeTime(iso: string | null): string {
@@ -53,6 +49,31 @@ function formatRelativeTime(iso: string | null): string {
   const hrs = Math.floor(mins / 60);
   if (hrs < 24) return `${hrs}h ago`;
   return `${Math.floor(hrs / 24)}d ago`;
+}
+
+// ── Background Orbs ──────────────────────────────────────────
+
+const { width, height } = Dimensions.get('window');
+
+function BackgroundOrbs() {
+  return (
+    <View style={[StyleSheet.absoluteFillObject, { pointerEvents: 'none' }]} pointerEvents="none">
+      <Svg height="100%" width="100%">
+        <Defs>
+          <RadialGradient id="grad1" cx="50%" cy="50%" rx="50%" ry="50%">
+            <Stop offset="0%" stopColor="rgba(79, 70, 229, 0.015)" />
+            <Stop offset="100%" stopColor="rgba(79, 70, 229, 0)" />
+          </RadialGradient>
+          <RadialGradient id="grad2" cx="50%" cy="50%" rx="50%" ry="50%">
+            <Stop offset="0%" stopColor="rgba(124, 58, 237, 0.01)" />
+            <Stop offset="100%" stopColor="rgba(124, 58, 237, 0)" />
+          </RadialGradient>
+        </Defs>
+        <Circle cx="0%" cy="0%" r={width * 0.35} fill="url(#grad1)" />
+        <Circle cx="100%" cy="15%" r={width * 0.28} fill="url(#grad2)" />
+      </Svg>
+    </View>
+  );
 }
 
 // ── Component ────────────────────────────────────────────────
@@ -75,15 +96,12 @@ export default function DashboardScreen() {
 
   const loadStats = useCallback(async () => {
     try {
-      // Today's sessions → patient count
       const sessions = await getSessionsByDate(getTodayStr());
       setTodayPatients(sessions.length);
 
-      // Pending sync count from queue
       const stats = await getQueueStats();
       setPendingSyncs(stats.pendingCount);
 
-      // Average AI confidence from all records with a confidence value
       const db = getDatabase();
       const row = await db.getFirstAsync<{ avg: number | null }>(
         `SELECT AVG(overall_confidence) as avg FROM records WHERE overall_confidence IS NOT NULL`,
@@ -114,193 +132,198 @@ export default function DashboardScreen() {
   }
 
   return (
-    <ScrollView
-      style={styles.screen}
-      contentContainerStyle={styles.content}
-      refreshControl={
-        <RefreshControl
-          refreshing={refreshing}
-          onRefresh={onRefresh}
-          tintColor={colors.primary}
-          colors={[colors.primary]}
-        />
-      }
-    >
-      {/* ── Header ─────────────────────────────────────────── */}
-      <View style={styles.header}>
-        <View style={styles.headerLeft}>
-          <Text style={styles.greeting}>
-            {getGreeting()}, <Text style={styles.doctorName}>Dr. Benali</Text>
-          </Text>
-          <Text style={styles.subtitle}>CHU Rural Clinic — Tizi Ouzou</Text>
-        </View>
-
-        {/* Sync status indicator */}
-        <View style={styles.syncIndicator}>
-          {syncStatus === 'syncing' ? (
-            <ActivityIndicator size="small" color={colors.primary} />
-          ) : (
-            <View
-              style={[
-                styles.statusDot,
-                { backgroundColor: isOnline ? colors.success : colors.mutedForeground },
-              ]}
-            />
-          )}
-          <Text style={styles.syncLabel}>
-            {syncStatus === 'syncing'
-              ? 'Syncing…'
-              : isOnline
-              ? 'Online'
-              : 'Offline'}
-          </Text>
-        </View>
-      </View>
-
-      {/* ── Offline Warning ────────────────────────────────── */}
-      {!isOnline && (
-        <Card variant="warning" style={styles.offlineCard}>
-          <CardContent style={styles.offlineContent}>
-            <View style={styles.offlineRow}>
-              <Ionicons name="cloud-offline-outline" size={22} color={colors.warning} />
-              <View style={styles.offlineText}>
-                <Text style={styles.offlineTitle}>You're Offline</Text>
-                <Text style={styles.offlineDesc}>
-                  Photos are saved locally and will auto-sync when connection is restored.
-                  {pendingSyncs > 0
-                    ? ` ${pendingSyncs} item${pendingSyncs > 1 ? 's' : ''} queued.`
-                    : ''}
-                </Text>
-              </View>
-            </View>
-          </CardContent>
-        </Card>
-      )}
-
-      {/* ── Start Session Button ───────────────────────────── */}
-      <Button
-        onPress={() => {
-          router.push('/session/new');
-        }}
-        variant="primary"
-        size="xl"
-        style={styles.startButton}
-        icon={
-          <Ionicons
-            name="camera-outline"
-            size={24}
-            color={colors.primaryForeground}
+    <View style={styles.screen}>
+      <BackgroundOrbs />
+      <ScrollView
+        contentContainerStyle={styles.content}
+        refreshControl={
+          <RefreshControl
+            refreshing={refreshing}
+            onRefresh={onRefresh}
+            tintColor={colors.primary}
+            colors={[colors.primary]}
           />
         }
       >
-        Start New Session
-      </Button>
+        {/* ── Header ─────────────────────────────────────────── */}
+        <View style={styles.header}>
+          <View style={styles.headerLeft}>
+            <Text weight="ExtraBold" style={styles.greeting}>
+              {getGreeting()},{'\n'}
+              <Text weight="ExtraBold" style={styles.doctorName}>Dr. Benali</Text>
+            </Text>
+            <Text weight="Medium" style={styles.subtitle}>CHU Rural Clinic — Tizi Ouzou</Text>
+          </View>
 
-      {/* ── Stats Row ──────────────────────────────────────── */}
-      <Text style={styles.sectionTitle}>Today's Overview</Text>
-
-      {loading ? (
-        <ActivityIndicator
-          size="large"
-          color={colors.primary}
-          style={{ marginVertical: spacing.xxl }}
-        />
-      ) : (
-        <View style={styles.statsRow}>
-          {/* Today's Patients */}
-          <Card style={styles.statCard} variant="primary">
-            <CardContent style={styles.statContent}>
-              <View style={[styles.statIcon, { backgroundColor: colors.primaryLight }]}>
-                <Ionicons name="people-outline" size={20} color={colors.primary} />
-              </View>
-              <Text style={styles.statNumber}>{todayPatients}</Text>
-              <Text style={styles.statLabel}>Patients{'\n'}Today</Text>
-            </CardContent>
-          </Card>
-
-          {/* Pending Syncs */}
-          <Card
-            style={styles.statCard}
-            variant={pendingSyncs > 0 ? 'warning' : 'default'}
-          >
-            <CardContent style={styles.statContent}>
+          {/* Sync status indicator */}
+          <View style={styles.syncIndicator}>
+            {syncStatus === 'syncing' ? (
+              <ActivityIndicator size="small" color={colors.primary} />
+            ) : (
               <View
                 style={[
-                  styles.statIcon,
-                  {
-                    backgroundColor:
-                      pendingSyncs > 0 ? colors.warningLight : colors.primaryLight,
-                  },
+                  styles.statusDot,
+                  { backgroundColor: isOnline ? colors.success : colors.mutedForeground },
                 ]}
-              >
-                <Ionicons
-                  name="cloud-upload-outline"
-                  size={20}
-                  color={pendingSyncs > 0 ? colors.warning : colors.primary}
-                />
-              </View>
-              <Text style={styles.statNumber}>{pendingSyncs}</Text>
-              <Text style={styles.statLabel}>Pending{'\n'}Syncs</Text>
-            </CardContent>
-          </Card>
-
-          {/* AI Accuracy */}
-          <Card style={styles.statCard} variant="success">
-            <CardContent style={styles.statContent}>
-              <View style={[styles.statIcon, { backgroundColor: colors.successLight }]}>
-                <Ionicons name="sparkles-outline" size={20} color={colors.success} />
-              </View>
-              <Text style={styles.statNumber}>
-                {avgConfidence > 0 ? `${avgConfidence}%` : '—'}
-              </Text>
-              <Text style={styles.statLabel}>AI{'\n'}Accuracy</Text>
-            </CardContent>
-          </Card>
+              />
+            )}
+            <Text weight="SemiBold" style={styles.syncLabel}>
+              {syncStatus === 'syncing'
+                ? 'Syncing…'
+                : isOnline
+                ? 'Online'
+                : 'Offline'}
+            </Text>
+          </View>
         </View>
-      )}
 
-      {/* ── Last Sync Info ─────────────────────────────────── */}
-      <View style={styles.lastSyncRow}>
-        <Ionicons name="sync-outline" size={14} color={colors.mutedForeground} />
-        <Text style={styles.lastSyncText}>
-          Last sync: {formatRelativeTime(lastSyncAt)}
-        </Text>
-        {pendingCount > 0 && (
-          <Badge variant="warning" style={styles.pendingBadge}>
-            {`${pendingCount} in queue`}
-          </Badge>
+        {/* ── Offline Warning ────────────────────────────────── */}
+        {!isOnline && (
+          <Card variant="warning" style={styles.offlineCard}>
+            <CardContent style={styles.offlineContent}>
+              <View style={styles.offlineRow}>
+                <FontAwesome6 name="tower-broadcast" size={22} color={colors.warning} />
+                <View style={styles.offlineText}>
+                  <Text weight="Bold" style={styles.offlineTitle}>You're Offline</Text>
+                  <Text style={styles.offlineDesc}>
+                    Photos are saved locally and will auto-sync when connection is restored.
+                    {pendingSyncs > 0
+                      ? ` ${pendingSyncs} item${pendingSyncs > 1 ? 's' : ''} queued.`
+                      : ''}
+                  </Text>
+                </View>
+              </View>
+            </CardContent>
+          </Card>
         )}
-      </View>
 
-      {/* ── Quick Actions ──────────────────────────────────── */}
-      <Text style={styles.sectionTitle}>Quick Actions</Text>
-      <View style={styles.actionsRow}>
-        <Button
-          onPress={() => router.push('/history')}
-          variant="outline"
-          size="md"
-          style={styles.actionButton}
-          icon={<Ionicons name="time-outline" size={18} color={colors.foreground} />}
-        >
-          View History
-        </Button>
-        <Button
-          onPress={() => router.push('/queue')}
-          variant="outline"
-          size="md"
-          style={styles.actionButton}
-          icon={
-            <Ionicons
-              name="git-pull-request-outline"
-              size={18}
-              color={colors.foreground}
-            />
-          }
-        >
-          Review Queue
-        </Button>
-      </View>
-    </ScrollView>
+        {/* ── Start Session Button ───────────────────────────── */}
+        <View style={styles.isometricContainer}>
+          <Button
+            onPress={() => {
+              router.push('/session/new');
+            }}
+            variant="primary"
+            size="xl"
+            style={styles.startButton}
+            icon={
+              <FontAwesome6
+                name="camera"
+                size={22}
+                color={colors.primaryForeground}
+              />
+            }
+          >
+            Start New Session
+          </Button>
+        </View>
+
+        {/* ── Stats Row ──────────────────────────────────────── */}
+        <Text weight="Bold" style={styles.sectionTitle}>Today's Overview</Text>
+
+        {loading ? (
+          <ActivityIndicator
+            size="large"
+            color={colors.primary}
+            style={{ marginVertical: spacing.xxl }}
+          />
+        ) : (
+          <View style={styles.statsRow}>
+            {/* Today's Patients */}
+            <Card style={styles.statCard} variant="primary">
+              <CardContent style={styles.statContent}>
+                <View style={[styles.statIcon, { backgroundColor: colors.primaryLight }]}>
+                  <FontAwesome6 name="users" size={20} color={colors.primary} />
+                </View>
+                <Text weight="ExtraBold" style={styles.statNumber}>{todayPatients}</Text>
+                <Text weight="SemiBold" style={styles.statLabel}>Patients{'\n'}Today</Text>
+              </CardContent>
+            </Card>
+
+            {/* Pending Syncs */}
+            <Card
+              style={styles.statCard}
+              variant={pendingSyncs > 0 ? 'warning' : 'default'}
+            >
+              <CardContent style={styles.statContent}>
+                <View
+                  style={[
+                    styles.statIcon,
+                    {
+                      backgroundColor:
+                        pendingSyncs > 0 ? colors.warningLight : colors.primaryLight,
+                    },
+                  ]}
+                >
+                  <FontAwesome6
+                    name="cloud-arrow-up"
+                    size={20}
+                    color={pendingSyncs > 0 ? colors.warning : colors.primary}
+                  />
+                </View>
+                <Text weight="ExtraBold" style={styles.statNumber}>{pendingSyncs}</Text>
+                <Text weight="SemiBold" style={styles.statLabel}>Pending{'\n'}Syncs</Text>
+              </CardContent>
+            </Card>
+
+            {/* AI Accuracy */}
+            <Card style={styles.statCard} variant="primary">
+              <CardContent style={styles.statContent}>
+                <View style={[styles.statIcon, { backgroundColor: colors.primaryLight }]}>
+                  <FontAwesome6 name="wand-magic-sparkles" size={20} color={colors.primary} />
+                </View>
+                <Text weight="ExtraBold" style={styles.statNumber}>
+                  {avgConfidence > 0 ? `${avgConfidence}%` : '—'}
+                </Text>
+                <Text weight="SemiBold" style={styles.statLabel}>AI{'\n'}Accuracy</Text>
+              </CardContent>
+            </Card>
+          </View>
+        )}
+
+        {/* ── Last Sync Info ─────────────────────────────────── */}
+        <View style={styles.lastSyncRow}>
+          <FontAwesome6 name="arrows-rotate" size={14} color={colors.mutedForeground} />
+          <Text weight="Medium" style={styles.lastSyncText}>
+            Last sync: {formatRelativeTime(lastSyncAt)}
+          </Text>
+          {pendingCount > 0 && (
+            <Badge variant="warning" style={styles.pendingBadge}>
+              {`${pendingCount} in queue`}
+            </Badge>
+          )}
+        </View>
+
+        {/* ── Quick Actions ──────────────────────────────────── */}
+        <Text weight="Bold" style={styles.sectionTitle}>Quick Actions</Text>
+        <View style={styles.actionsRow}>
+          <Button
+            onPress={() => router.push('/history')}
+            variant="outline"
+            size="md"
+            style={styles.actionButton}
+            icon={<FontAwesome6 name="clock-rotate-left" size={18} color={colors.foreground} />}
+          >
+            View History
+          </Button>
+          <Button
+            onPress={() => router.push('/queue')}
+            variant="outline"
+            size="md"
+            style={styles.actionButton}
+            icon={
+              <FontAwesome6
+                name="list-check"
+                size={18}
+                color={colors.foreground}
+              />
+            }
+          >
+            Review Queue
+          </Button>
+        </View>
+      </ScrollView>
+    </View>
   );
 }
 
@@ -312,7 +335,7 @@ const styles = StyleSheet.create({
     backgroundColor: colors.background,
   },
   content: {
-    paddingTop: 60,
+    paddingTop: 104,
     paddingHorizontal: spacing.lg,
     paddingBottom: 40,
   },
@@ -322,24 +345,26 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'flex-start',
-    marginBottom: spacing.lg,
+    marginBottom: spacing.xxl,
   },
   headerLeft: {
     flex: 1,
   },
   greeting: {
-    fontSize: fontSize.xxl,
-    fontWeight: fontWeight.bold,
+    fontSize: 32,
     color: colors.foreground,
-    lineHeight: 32,
+    lineHeight: 38,
+    letterSpacing: -0.5,
   },
   doctorName: {
     color: colors.primary,
+    fontSize: 32,
+    letterSpacing: -0.5,
   },
   subtitle: {
-    fontSize: fontSize.md,
+    fontSize: 16,
     color: colors.mutedForeground,
-    marginTop: spacing.xs,
+    marginTop: spacing.sm,
   },
 
   // Sync indicator
@@ -348,22 +373,27 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     gap: 6,
     paddingHorizontal: spacing.md,
-    paddingVertical: spacing.sm,
-    backgroundColor: colors.card,
+    paddingVertical: 6,
+    backgroundColor: '#fff',
     borderRadius: borderRadius.full,
     borderWidth: 1,
     borderColor: colors.border,
-    ...shadow.sm,
+    shadowColor: '#4F46E5',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.05,
+    shadowRadius: 4,
+    elevation: 2,
   },
   statusDot: {
-    width: 8,
-    height: 8,
-    borderRadius: 4,
+    width: 6,
+    height: 6,
+    borderRadius: 3,
   },
   syncLabel: {
-    fontSize: fontSize.xs,
-    fontWeight: fontWeight.medium,
+    fontSize: 11,
     color: colors.mutedForeground,
+    textTransform: 'uppercase',
+    letterSpacing: 0.5,
   },
 
   // Offline warning
@@ -382,28 +412,37 @@ const styles = StyleSheet.create({
     flex: 1,
   },
   offlineTitle: {
-    fontSize: fontSize.md,
-    fontWeight: fontWeight.semibold,
+    fontSize: 15,
     color: colors.warningForeground,
     marginBottom: 2,
   },
   offlineDesc: {
-    fontSize: fontSize.sm,
+    fontSize: 13,
     color: colors.mutedForeground,
     lineHeight: 18,
   },
 
-  // Start button
+  // Isometric Container
+  isometricContainer: {
+    // Subtle 3D Depth
+    transform: [{ perspective: 1000 }, { rotateX: '5deg' }, { rotateY: '-12deg' }],
+    marginBottom: 32,
+    shadowColor: '#4F46E5',
+    shadowOffset: { width: 10, height: 15 },
+    shadowOpacity: 0.25,
+    shadowRadius: 20,
+    elevation: 10,
+    borderRadius: borderRadius.md,
+  },
   startButton: {
-    marginBottom: spacing.xxl,
-    borderRadius: borderRadius.lg,
+    borderRadius: borderRadius.md,
   },
 
   // Section title
   sectionTitle: {
-    fontSize: fontSize.lg,
-    fontWeight: fontWeight.semibold,
+    fontSize: 22,
     color: colors.foreground,
+    lineHeight: 28,
     marginBottom: spacing.md,
   },
 
@@ -411,7 +450,7 @@ const styles = StyleSheet.create({
   statsRow: {
     flexDirection: 'row',
     gap: spacing.md,
-    marginBottom: spacing.xl,
+    marginBottom: spacing.xxl,
   },
   statCard: {
     flex: 1,
@@ -422,22 +461,20 @@ const styles = StyleSheet.create({
     paddingHorizontal: spacing.sm,
   },
   statIcon: {
-    width: 40,
-    height: 40,
+    width: 44,
+    height: 44,
     borderRadius: borderRadius.md,
     alignItems: 'center',
     justifyContent: 'center',
     marginBottom: spacing.sm,
   },
   statNumber: {
-    fontSize: fontSize.xxl,
-    fontWeight: fontWeight.bold,
+    fontSize: 26,
     color: colors.foreground,
     marginBottom: 2,
   },
   statLabel: {
-    fontSize: fontSize.xs,
-    fontWeight: fontWeight.medium,
+    fontSize: 11,
     color: colors.mutedForeground,
     textAlign: 'center',
     lineHeight: 14,
@@ -451,11 +488,13 @@ const styles = StyleSheet.create({
     marginBottom: spacing.xxl,
     paddingVertical: spacing.sm,
     paddingHorizontal: spacing.md,
-    backgroundColor: colors.muted,
+    backgroundColor: '#fff',
     borderRadius: borderRadius.sm,
+    borderWidth: 1,
+    borderColor: colors.border,
   },
   lastSyncText: {
-    fontSize: fontSize.sm,
+    fontSize: 12,
     color: colors.mutedForeground,
     flex: 1,
   },
@@ -470,5 +509,6 @@ const styles = StyleSheet.create({
   },
   actionButton: {
     flex: 1,
+    backgroundColor: '#fff',
   },
 });

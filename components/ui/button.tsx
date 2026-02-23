@@ -1,17 +1,15 @@
-// ─────────────────────────────────────────────────────────────
-// Snap & Sync — Native Button Component
-// ─────────────────────────────────────────────────────────────
-
 import React from 'react';
 import {
-  TouchableOpacity,
-  Text,
+  Pressable,
   StyleSheet,
   ActivityIndicator,
+  View,
   type ViewStyle,
   type TextStyle,
 } from 'react-native';
-import { colors, borderRadius, spacing, fontSize, fontWeight, shadow } from '@/lib/theme';
+import { LinearGradient } from 'expo-linear-gradient';
+import { colors, borderRadius, spacing, shadow } from '@/lib/theme';
+import { Text } from '@/components/ui/Text';
 
 type ButtonVariant = 'primary' | 'outline' | 'ghost' | 'success' | 'destructive';
 type ButtonSize = 'sm' | 'md' | 'lg' | 'xl';
@@ -39,58 +37,72 @@ export function Button({
   textStyle,
   icon,
 }: ButtonProps) {
+  const isPrimary = variant === 'primary';
   const variantBg = bgVariants[variant];
   const variantText = textVariants[variant];
   const sizeStyle = sizeStyles[size];
   const sizeTextStyle = sizeTextStyles[size];
 
   return (
-    <TouchableOpacity
+    <Pressable
       onPress={onPress}
       disabled={disabled || loading}
-      activeOpacity={0.8}
-      style={[
+      style={({ pressed }) => [
         styles.button,
         sizeStyle,
-        variantBg,
+        isPrimary ? null : variantBg,
         disabled && styles.disabled,
-        variant === 'primary' && shadow.md,
+        isPrimary && shadow.md,
+        pressed && !disabled && !loading && { transform: [{ scale: 0.98 }] },
         style,
       ]}
     >
-      {loading ? (
-        <ActivityIndicator
-          size="small"
-          color={variant === 'outline' || variant === 'ghost' ? colors.primary : colors.primaryForeground}
+      {isPrimary && (
+        <LinearGradient
+          colors={[colors.primary, '#7C3AED']}
+          start={{ x: 0, y: 0 }}
+          end={{ x: 1, y: 1 }}
+          style={[StyleSheet.absoluteFill, { borderRadius: borderRadius.md }]}
         />
-      ) : (
-        <>
-          {icon}
-          {typeof children === 'string' ? (
-            <Text
-              style={[styles.buttonText, sizeTextStyle, variantText, textStyle]}
-            >
-              {children}
-            </Text>
-          ) : (
-            children
-          )}
-        </>
       )}
-    </TouchableOpacity>
+      <View style={styles.content}>
+        {loading ? (
+          <ActivityIndicator
+            size="small"
+            color={variant === 'outline' || variant === 'ghost' ? colors.primary : colors.primaryForeground}
+          />
+        ) : (
+          <>
+            {icon}
+            {typeof children === 'string' ? (
+              <Text
+                weight="SemiBold"
+                style={[{ color: variantText.color }, sizeTextStyle, textStyle]}
+              >
+                {children}
+              </Text>
+            ) : (
+              children
+            )}
+          </>
+        )}
+      </View>
+    </Pressable>
   );
 }
 
 const styles = StyleSheet.create({
   button: {
+    borderRadius: borderRadius.md,
+    overflow: 'hidden', // to keep gradient inside
+  },
+  content: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
     gap: spacing.sm,
-    borderRadius: borderRadius.md,
-  },
-  buttonText: {
-    fontWeight: fontWeight.semibold,
+    width: '100%',
+    height: '100%',
   },
   disabled: {
     opacity: 0.5,
@@ -99,24 +111,34 @@ const styles = StyleSheet.create({
 
 const sizeStyles: Record<ButtonSize, ViewStyle> = {
   sm: { height: 36, paddingHorizontal: spacing.md },
-  md: { height: 44, paddingHorizontal: spacing.lg },
-  lg: { height: 52, paddingHorizontal: spacing.xl },
-  xl: { height: 60, paddingHorizontal: spacing.xxl, borderRadius: borderRadius.lg },
+  md: { height: 48, paddingHorizontal: spacing.lg },
+  lg: { height: 56, paddingHorizontal: spacing.xl },
+  xl: { height: 64, paddingHorizontal: spacing.xxl },
 };
 
 const sizeTextStyles: Record<ButtonSize, TextStyle> = {
-  sm: { fontSize: fontSize.sm },
-  md: { fontSize: fontSize.md },
-  lg: { fontSize: fontSize.lg },
-  xl: { fontSize: fontSize.xl },
+  sm: { fontSize: 13 },
+  md: { fontSize: 16 },
+  lg: { fontSize: 18 },
+  xl: { fontSize: 20 },
 };
 
 const bgVariants: Record<ButtonVariant, ViewStyle> = {
-  primary: { backgroundColor: colors.primary },
-  outline: { backgroundColor: 'transparent', borderWidth: 1, borderColor: colors.border },
-  ghost: { backgroundColor: 'transparent' },
-  success: { backgroundColor: colors.success },
-  destructive: { backgroundColor: colors.destructive },
+  primary: {}, // Handled by gradient
+  outline: {
+    backgroundColor: 'transparent',
+    borderWidth: 1,
+    borderColor: colors.border,
+  },
+  ghost: {
+    backgroundColor: 'transparent',
+  },
+  success: {
+    backgroundColor: colors.success,
+  },
+  destructive: {
+    backgroundColor: colors.destructive,
+  },
 };
 
 const textVariants: Record<ButtonVariant, TextStyle> = {

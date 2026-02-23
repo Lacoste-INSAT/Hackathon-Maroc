@@ -12,7 +12,6 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import {
   View,
-  Text,
   StyleSheet,
   FlatList,
   Image,
@@ -51,6 +50,7 @@ import { debouncedSync } from '@/services/backgroundSync';
 import { Card, CardContent } from '@/components/ui/Card';
 import { Badge } from '@/components/ui/Badge';
 import { Button } from '@/components/ui/Button';
+import { Text } from '@/components/ui/Text';
 
 // ── Constants ───────────────────────────────────────────────
 const SCREEN_WIDTH = Dimensions.get('window').width;
@@ -328,7 +328,7 @@ export default function QueueScreen() {
     <View style={styles.container}>
       {/* Header */}
       <View style={styles.header}>
-        <Text style={styles.title}>Queue</Text>
+        <Text weight="Bold" style={styles.title}>Queue</Text>
         
         <View style={styles.tabRow}>
           <Button
@@ -433,7 +433,7 @@ function RecordRow({ item, onReview }: RecordRowProps) {
 
           {/* Patient info */}
           <View style={styles.rowInfo}>
-            <Text style={styles.rowPatientName} numberOfLines={1}>
+            <Text weight="SemiBold" style={styles.rowPatientName} numberOfLines={1}>
               {item.patientName}
             </Text>
             <Text style={styles.rowPatientCode}>{item.patientCode}</Text>
@@ -460,6 +460,7 @@ function RecordRow({ item, onReview }: RecordRowProps) {
               color={colors.primary}
             />
           }
+          style={{ minWidth: 100 }}
         >
           Review
         </Button>
@@ -508,6 +509,7 @@ function FailedItemRow({
           loading={isRetrying}
           disabled={isRetrying}
           icon={<Ionicons name="refresh-outline" size={14} color={colors.primary} />}
+          style={{ minWidth: 100 }}
         >
           Retry
         </Button>
@@ -545,7 +547,7 @@ function DetailView({
       <View style={styles.detailHeader}>
         <Button variant="ghost" size="sm" onPress={onBack}>
           <Ionicons name="arrow-back" size={20} color={colors.foreground} />
-          <Text style={styles.backText}> Back</Text>
+          <Text weight="Medium" style={styles.backText}> Back</Text>
         </Button>
         <Badge
           variant={
@@ -568,7 +570,7 @@ function DetailView({
         {/* Patient info header */}
         <View style={styles.detailPatientRow}>
           <View>
-            <Text style={styles.detailPatientName}>{record.patientName}</Text>
+            <Text weight="Bold" style={styles.detailPatientName}>{record.patientName}</Text>
             <Text style={styles.detailPatientCode}>{record.patientCode}</Text>
           </View>
           <Text style={styles.detailDate}>
@@ -600,7 +602,7 @@ function DetailView({
                 color={colors.warning}
               />
               <View style={styles.flaggedTextWrap}>
-                <Text style={styles.flaggedLabel}>Flagged Reason</Text>
+                <Text weight="SemiBold" style={styles.flaggedLabel}>Flagged Reason</Text>
                 <Text style={styles.flaggedText}>
                   {record.flagged_reason}
                 </Text>
@@ -611,7 +613,7 @@ function DetailView({
 
         {/* Extracted data fields */}
         <View style={styles.fieldsSection}>
-          <Text style={styles.fieldsSectionTitle}>Extracted Data</Text>
+          <Text weight="Bold" style={styles.fieldsSectionTitle}>Extracted Data</Text>
           <Text style={styles.fieldsSectionSubtitle}>
             Review and correct any fields below
           </Text>
@@ -683,8 +685,8 @@ function FieldEditor({ field, index, onUpdate }: FieldEditorProps) {
       <CardContent style={styles.fieldCardContent}>
         {/* Label & confidence */}
         <View style={styles.fieldHeader}>
-          <Text style={styles.fieldLabel}>{field.label}</Text>
-          <Text style={[styles.fieldConfText, { color: confColor }]}>
+          <Text weight="SemiBold" style={styles.fieldLabel}>{field.label}</Text>
+          <Text weight="Bold" style={[styles.fieldConfText, { color: confColor }]}>
             {Math.round(field.confidence)}%
           </Text>
         </View>
@@ -812,11 +814,11 @@ function EmptyState({ subtitle }: { subtitle?: string }) {
         <Ionicons
           name="checkmark-done-circle"
           size={64}
-          color={colors.success}
+          color={colors.primary}
         />
       </View>
-      <Text style={styles.emptyTitle}>Queue Clear</Text>
-      <Text style={styles.emptySubtitle}>
+      <Text weight="Bold" style={styles.emptyTitle}>Queue Clear</Text>
+      <Text weight="Medium" style={styles.emptySubtitle}>
         {subtitle || 'All records have been reviewed and approved. Pull down to refresh.'}
       </Text>
       <Button 
@@ -826,7 +828,7 @@ function EmptyState({ subtitle }: { subtitle?: string }) {
          loading={nuking}
          disabled={nuking}
       >
-        <Text style={{ color: colors.destructive, fontWeight: 'bold' }}>Wipe Local Database</Text>
+        <Text weight="Bold" style={{ color: colors.destructive }}>Wipe Local Database</Text>
       </Button>
     </View>
   );

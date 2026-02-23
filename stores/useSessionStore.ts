@@ -196,7 +196,7 @@ export const useSessionStore = create<SessionStore>((set, get) => ({
       const record = state.records.find((r) => r.id === recordId)
       if (record) {
         const entry: HistoryEntry = {
-          id: Date.now(),
+          id: Date.now().toString(),
           patient: record.patientName,
           patientId: record.patientId,
           time: new Date().toLocaleTimeString("en-US", {
@@ -254,7 +254,7 @@ export const useSessionStore = create<SessionStore>((set, get) => ({
     // Add to history
     if (record) {
       const entry: HistoryEntry = {
-        id: Date.now(),
+        id: Date.now().toString(),
         patient: record.patientName,
         patientId: record.patientId,
         time: new Date().toLocaleTimeString("en-US", {
