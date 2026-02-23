@@ -7,7 +7,8 @@ A resilient, offline-first mobile application designed to securely capture patie
 - **Offline-First Architecture**: Uses local `expo-sqlite` and `expo-file-system` to queue and store high-resolution document photos immediately, without requiring an active internet connection.
 - **Background Synchronization**: Monitors network conditions utilizing `@react-native-community/netinfo` and automatically pushes pending captures to Supabase when the device comes online.
 - **AI Extraction Review**: Features a Review Queue UI where doctors or administrators can review Google Gemini OCR extractions, view confidence scores, and make manual corrections before final approval.
-- **Native Polish**: Implements `expo-haptics` for tactile feedback, Skeleton loaders for smooth UX, and `react-native-reanimated` for performant transitions.
+- **History Tracking**: Comprehensive, searchable history view to audit past sessions, AI extractions, and synced data.
+- **Native Polish**: Implements `expo-haptics` for tactile feedback, Skeleton loaders for smooth UX, multi-state dynamic UI styling, and robust error handling.
 
 ## Prerequisites
 
@@ -29,6 +30,7 @@ A resilient, offline-first mobile application designed to securely capture patie
    EXPO_PUBLIC_SUPABASE_URL=https://<your-project-id>.supabase.co
    EXPO_PUBLIC_SUPABASE_KEY=<your-anon-key>
    EXPO_PUBLIC_SUPABASE_ANON_KEY=<your-anon-key>
+   EXPO_PUBLIC_GEMINI_API_KEY=<your-gemini-api-key>
    ```
 
 3. **Start the Metro Bundler**
