@@ -10,6 +10,7 @@ import {
   RefreshControl,
   ActivityIndicator,
   TouchableOpacity,
+  Platform,
 } from 'react-native';
 import { useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
@@ -54,17 +55,15 @@ function statusLabel(status: HistoryStatus): string {
   }
 }
 
-/** Badge variant for a HistoryStatus */
-function statusVariant(
-  status: HistoryStatus
-): 'success' | 'warning' | 'default' {
+/** Define Custom Colors for History Statuses */
+function getStatusColors(status: HistoryStatus) {
   switch (status) {
     case 'ai-realtime':
-      return 'success';
+      return { bg: 'rgba(16, 185, 129, 0.12)', border: 'rgba(16, 185, 129, 0.2)', text: '#10B981' };
     case 'auto-synced':
-      return 'warning';
+      return { bg: 'rgba(245, 158, 11, 0.12)', border: 'rgba(245, 158, 11, 0.2)', text: '#F59E0B' };
     case 'doctor-reviewed':
-      return 'default';
+      return { bg: 'rgba(59, 130, 246, 0.12)', border: 'rgba(59, 130, 246, 0.2)', text: '#3B82F6' };
   }
 }
 
@@ -230,7 +229,14 @@ export default function HistoryScreen() {
 
               {/* Status + Confidence */}
               <View style={styles.rightCol}>
-                <Badge variant={statusVariant(item.status)}>
+                <Badge
+                  style={{
+                    backgroundColor: getStatusColors(item.status).bg,
+                    borderColor: getStatusColors(item.status).border,
+                    borderWidth: 1,
+                  }}
+                  textStyle={{ color: getStatusColors(item.status).text }}
+                >
                   {statusLabel(item.status)}
                 </Badge>
                 {item.confidence > 0 && (
@@ -280,47 +286,37 @@ export default function HistoryScreen() {
   // ── Header component (rendered above FlatList) ────────────
 
   const ListHeader = () => (
-    <View>
-      {/* ── Page Header ──────────────────────────────────── */}
-      <View style={styles.headerSection}>
-        <Text weight="Bold" style={styles.title}>History</Text>
-        <Text weight="Medium" style={styles.subtitle}>
-          {entries.length > 0
-            ? `${entries.length} record${entries.length !== 1 ? 's' : ''} captured`
-            : "Today's session records"}
-        </Text>
-      </View>
-
+    <View style={{ paddingTop: spacing.md }}>
       {/* ── Summary Cards ────────────────────────────────── */}
       <View style={styles.summaryRow}>
         <SummaryCard
           icon="sparkles"
           label="AI Verified"
           count={summary.aiRealtime}
-          color={colors.success}
-          bg={colors.successLight}
+          color="#10B981"
+          bg="rgba(16, 185, 129, 0.12)"
         />
         <SummaryCard
           icon="cloud-upload-outline"
           label="Auto-synced"
           count={summary.autoSynced}
-          color={colors.warning}
-          bg={colors.warningLight}
+          color="#F59E0B"
+          bg="rgba(245, 158, 11, 0.12)"
         />
         <SummaryCard
           icon="checkmark-circle-outline"
           label="Reviewed"
           count={summary.doctorReviewed}
-          color={colors.primary}
-          bg={colors.primaryLight}
+          color="#3B82F6"
+          bg="rgba(59, 130, 246, 0.12)"
         />
       </View>
 
       {/* ── Status Legend ─────────────────────────────────── */}
       <View style={styles.legendRow}>
-        <LegendPill color={colors.success} label="AI Verified" />
-        <LegendPill color={colors.warning} label="Pending Sync" />
-        <LegendPill color={colors.primary} label="Doctor Reviewed" />
+        <LegendPill color="#10B981" label="AI Verified" />
+        <LegendPill color="#F59E0B" label="Pending Sync" />
+        <LegendPill color="#3B82F6" label="Doctor Reviewed" />
       </View>
     </View>
   );
@@ -337,9 +333,18 @@ export default function HistoryScreen() {
   }
 
   return (
-    <FlatList
-      style={styles.screen}
-      contentContainerStyle={styles.listContent}
+    <View style={styles.screen}>
+      <View style={styles.fixedHeader}>
+        <Text weight="Bold" style={styles.title}>History</Text>
+        <Text weight="Medium" style={styles.subtitle}>
+          {entries.length > 0
+            ? `${entries.length} record${entries.length !== 1 ? 's' : ''} captured`
+            : "Today's session records"}
+        </Text>
+      </View>
+      <FlatList
+        style={styles.flex1}
+        contentContainerStyle={styles.listContent}
       data={entries}
       keyExtractor={(item) => String(item.id)}
       renderItem={renderItem}
@@ -356,6 +361,7 @@ export default function HistoryScreen() {
       }
       showsVerticalScrollIndicator={false}
     />
+    </View>
   );
 }
 
@@ -405,6 +411,9 @@ const styles = StyleSheet.create({
     flex: 1,
     backgroundColor: colors.background,
   },
+  flex1: {
+    flex: 1,
+  },
   centered: {
     alignItems: 'center',
     justifyContent: 'center',
@@ -414,8 +423,15 @@ const styles = StyleSheet.create({
     fontSize: fontSize.md,
     color: colors.mutedForeground,
   },
+  fixedHeader: {
+    paddingTop: Platform.OS === 'ios' ? 60 : 48,
+    paddingHorizontal: spacing.lg,
+    paddingBottom: spacing.md,
+    backgroundColor: colors.background,
+    borderBottomWidth: 1,
+    borderBottomColor: colors.border,
+  },
   listContent: {
-    paddingTop: 60,
     paddingHorizontal: spacing.lg,
     paddingBottom: 40,
   },

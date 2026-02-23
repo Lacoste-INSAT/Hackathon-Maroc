@@ -835,10 +835,12 @@ function EmptyState({ subtitle }: { subtitle?: string }) {
           color={colors.primary}
         />
       </View>
-      <Text weight="Bold" style={styles.emptyTitle}>Queue Clear</Text>
-      <Text weight="Medium" style={styles.emptySubtitle}>
-        {subtitle || 'All records have been reviewed and approved. Pull down to refresh.'}
-      </Text>
+      <View style={styles.emptyTextWrap}>
+        <Text weight="Bold" style={styles.emptyTitle}>Queue Clear</Text>
+        <Text weight="Medium" style={styles.emptySubtitle}>
+          {subtitle || 'All records have been reviewed and approved. Pull down to refresh.'}
+        </Text>
+      </View>
       <Button 
          variant="outline" 
          style={{ marginTop: 24, alignSelf: 'center', borderColor: colors.destructive }}
@@ -1194,18 +1196,22 @@ const styles = StyleSheet.create({
   // ── Empty state ──
   emptyContainer: {
     flex: 1,
-    justifyContent: 'center',
     alignItems: 'center',
     paddingHorizontal: spacing.xxxl,
+    paddingTop: 100, // Fixed position from top instead of centered
   },
   emptyIconWrap: {
     width: 96,
     height: 96,
     borderRadius: 48,
-    backgroundColor: colors.successLight,
+    backgroundColor: colors.primaryLight,
     justifyContent: 'center',
     alignItems: 'center',
     marginBottom: spacing.xl,
+  },
+  emptyTextWrap: {
+    minHeight: 80, // Fixed height so the text block doesn't change layout size
+    alignItems: 'center',
   },
   emptyTitle: {
     fontSize: fontSize.xxl,
