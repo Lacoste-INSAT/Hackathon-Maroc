@@ -48,9 +48,9 @@ import { getSessionById } from '@/services/sessionRepository';
 import { syncAllPending } from '@/services/cloudSync';
 import { getFailedItems, retryFailedItem } from '@/services/offlineQueue';
 import { debouncedSync } from '@/services/backgroundSync';
-import { Card, CardContent } from '@/components/ui/Card';
-import { Badge } from '@/components/ui/Badge';
-import { Button } from '@/components/ui/Button';
+import { Card, CardContent } from '@/components/ui/card';
+import { Badge } from '@/components/ui/badge';
+import { Button } from '@/components/ui/button';
 import { Text } from '@/components/ui/Text';
 import { formatName, formatCode } from '@/lib/stringUtils';
 
@@ -1198,7 +1198,7 @@ const styles = StyleSheet.create({
     flex: 1,
     alignItems: 'center',
     paddingHorizontal: spacing.xxxl,
-    paddingTop: 100, // Fixed position from top instead of centered
+    paddingTop: 160, // Fixed position from top instead of centered
   },
   emptyIconWrap: {
     width: 96,

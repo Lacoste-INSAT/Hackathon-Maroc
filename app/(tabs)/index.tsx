@@ -18,9 +18,9 @@ import { Ionicons } from '@expo/vector-icons';
 
 import { colors, spacing, borderRadius } from '@/lib/theme';
 import { Text } from '@/components/ui/Text';
-import { Card, CardContent } from '@/components/ui/Card';
-import { Button } from '@/components/ui/Button';
-import { Badge } from '@/components/ui/Badge';
+import { Card, CardContent } from '@/components/ui/card';
+import { Button } from '@/components/ui/button';
+import { Badge } from '@/components/ui/badge';
 import { useNetworkState } from '@/hooks/useNetworkState';
 import { useSyncStore } from '@/stores/useSyncStore';
 import { getSessionsByDate } from '@/services/sessionRepository';
@@ -204,7 +204,7 @@ export default function DashboardScreen() {
             onPress={() => {
               router.push('/session/new');
             }}
-            variant="success"
+            variant="primary"
             size="xl"
             style={styles.startButton}
             icon={
@@ -242,10 +242,7 @@ export default function DashboardScreen() {
             </Card>
 
             {/* Pending Syncs */}
-            <Card
-              style={styles.statCard}
-              variant={pendingSyncs > 0 ? 'warning' : 'default'}
-            >
+            <Card style={styles.statCard} variant="default">
               <CardContent style={styles.statContent}>
                 <View
                   style={[
@@ -423,12 +420,11 @@ const styles = StyleSheet.create({
     lineHeight: 18,
   },
 
-  // Isometric Container
+  // Container
   isometricContainer: {
-    // Subtle 3D Depth
-    transform: [{ perspective: 1000 }, { rotateX: '5deg' }, { rotateY: '-12deg' }],
+    marginTop: spacing.xl,
     marginBottom: 32,
-    shadowColor: '#1E1B4B', // Very dark indigo for natural depth
+    shadowColor: '#1E1B4B',
     shadowOffset: { width: 0, height: 12 },
     shadowOpacity: 0.15,
     shadowRadius: 24,

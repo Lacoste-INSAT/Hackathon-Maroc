@@ -9,9 +9,9 @@ export const colors = {
   primaryLight: 'rgba(79, 70, 229, 0.12)',
 
   // ── Semantic ──
-  success: '#8B5CF6',           // Violet 500 (Cohesive Accent)
+  success: '#10B981',           // Emerald 500 (Cohesive Accent)
   successForeground: '#ffffff',
-  successLight: 'rgba(139, 92, 246, 0.12)',
+  successLight: 'rgba(16, 185, 129, 0.12)',
 
   warning: '#F59E0B',           // Amber 500
   warningForeground: '#92400E',
@@ -74,21 +74,21 @@ export const fontWeight = {
 
 export const shadow = {
   sm: {
-    shadowColor: '#000000',
+    shadowColor: '#0F172A',
     shadowOffset: { width: 0, height: 1 },
     shadowOpacity: 0.05,
     shadowRadius: 3,
     elevation: 2,
   },
   md: {
-    shadowColor: '#000000',
+    shadowColor: '#0F172A',
     shadowOffset: { width: 0, height: 2 },
     shadowOpacity: 0.05,
     shadowRadius: 6,
     elevation: 3,
   },
   lg: {
-    shadowColor: '#000000',
+    shadowColor: '#0F172A',
     shadowOffset: { width: 0, height: 4 },
     shadowOpacity: 0.05,
     shadowRadius: 10,

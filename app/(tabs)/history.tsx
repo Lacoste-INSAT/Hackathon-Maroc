@@ -24,9 +24,10 @@ import {
   getConfidenceColor,
   getConfidenceBg,
 } from '@/lib/theme';
-import { Card, CardContent } from '@/components/ui/Card';
-import { Badge } from '@/components/ui/Badge';
+import { Card, CardContent } from '@/components/ui/card';
+import { Badge } from '@/components/ui/badge';
 import { Text } from '@/components/ui/Text';
+import { CircularProgress } from '@/components/ui/CircularProgress';
 import { getDatabase } from '@/services/database';
 import { formatName, formatCode } from '@/lib/stringUtils';
 import type { HistoryEntry, HistoryStatus } from '@/lib/types';
@@ -36,34 +37,56 @@ import type { HistoryEntry, HistoryStatus } from '@/lib/types';
 /** Map a raw DB row into a display-ready HistoryStatus */
 function deriveStatus(
   recordStatus: string,
-  hasCorrections: boolean
+  hasCorrections: boolean,
+  confidence: number,
+  correctionsJson: string | null
 ): HistoryStatus {
-  if (recordStatus === 'approved' && hasCorrections) return 'doctor-reviewed';
-  if (recordStatus === 'approved') return 'ai-realtime';
-  return 'auto-synced';
+  if (recordStatus !== 'approved') return 'pending-sync';
+  
+  if (!correctionsJson) {
+    if (confidence < 80) return 'queue-reviewed';
+    return 'ai-verified';
+  }
+  
+  try {
+    const parsed = JSON.parse(correctionsJson);
+    const hasEdits = parsed.some((p: any) => p.originalValue !== p.correctedValue);
+    
+    if (hasEdits) return 'assisted-capture';
+    if (confidence < 80) return 'queue-reviewed';
+    return 'autocaptured';
+  } catch(e) {
+    if (confidence < 80) return 'queue-reviewed';
+    return 'ai-verified';
+  }
 }
 
 /** Human-readable label for a HistoryStatus */
 function statusLabel(status: HistoryStatus): string {
   switch (status) {
-    case 'ai-realtime':
-      return 'AI Verified';
-    case 'auto-synced':
-      return 'Pending Sync';
-    case 'doctor-reviewed':
-      return 'Doctor Reviewed';
+    case 'ai-verified': return 'AI Verified';
+    case 'autocaptured': return 'Autocaptured';
+    case 'assisted-capture': return 'Assisted Capture';
+    case 'queue-reviewed': return 'Queue-Reviewed';
+    case 'pending-sync': return 'Pending Sync';
+    default: return 'Pending Sync';
   }
 }
 
 /** Define Custom Colors for History Statuses */
 function getStatusColors(status: HistoryStatus) {
   switch (status) {
-    case 'ai-realtime':
+    case 'ai-verified':
       return { bg: 'rgba(16, 185, 129, 0.12)', border: 'rgba(16, 185, 129, 0.2)', text: '#10B981' };
-    case 'auto-synced':
-      return { bg: 'rgba(245, 158, 11, 0.12)', border: 'rgba(245, 158, 11, 0.2)', text: '#F59E0B' };
-    case 'doctor-reviewed':
+    case 'autocaptured':
       return { bg: 'rgba(59, 130, 246, 0.12)', border: 'rgba(59, 130, 246, 0.2)', text: '#3B82F6' };
+    case 'assisted-capture':
+      return { bg: 'rgba(245, 158, 11, 0.12)', border: 'rgba(245, 158, 11, 0.2)', text: '#F59E0B' };
+    case 'queue-reviewed':
+      return { bg: 'rgba(139, 92, 246, 0.12)', border: 'rgba(139, 92, 246, 0.2)', text: '#8B5CF6' };
+    case 'pending-sync':
+    default:
+      return { bg: 'rgba(100, 116, 139, 0.12)', border: 'rgba(100, 116, 139, 0.2)', text: '#64748B' };
   }
 }
 
@@ -93,7 +116,7 @@ interface RawHistoryRow {
   created_at: string;
   record_status: string;
   overall_confidence: number | null;
-  has_corrections: number; // 0 or 1 from SQLite
+  doctor_corrections: string | null;
   notes_count: number;
 }
 
@@ -110,7 +133,7 @@ async function fetchHistory(): Promise<HistoryEntry[]> {
        r.created_at,
        r.status AS record_status,
        r.overall_confidence,
-       CASE WHEN r.doctor_corrections IS NOT NULL THEN 1 ELSE 0 END AS has_corrections,
+       r.doctor_corrections,
        (SELECT COUNT(*) FROM records r2 WHERE r2.session_id = s.id) AS notes_count
      FROM records r
      JOIN sessions s ON r.session_id = s.id
@@ -128,7 +151,7 @@ async function fetchHistory(): Promise<HistoryEntry[]> {
       patientId: fc,
       time: formatTime(row.created_at),
       notesCount: row.notes_count,
-      status: deriveStatus(row.record_status, row.has_corrections === 1),
+      status: deriveStatus(row.record_status, false, row.overall_confidence ?? 0, row.doctor_corrections),
       confidence: row.overall_confidence ?? 0,
     };
   });
@@ -136,17 +159,19 @@ async function fetchHistory(): Promise<HistoryEntry[]> {
 
 /** Compute summary counts from history entries */
 function computeSummary(entries: HistoryEntry[]) {
-  let aiRealtime = 0;
-  let autoSynced = 0;
-  let doctorReviewed = 0;
+  let aiVerified = 0;
+  let autocaptured = 0;
+  let assistedCapture = 0;
+  let queueReviewed = 0;
 
   for (const e of entries) {
-    if (e.status === 'ai-realtime') aiRealtime++;
-    else if (e.status === 'auto-synced') autoSynced++;
-    else if (e.status === 'doctor-reviewed') doctorReviewed++;
+    if (e.status === 'ai-verified') aiVerified++;
+    else if (e.status === 'autocaptured') autocaptured++;
+    else if (e.status === 'assisted-capture') assistedCapture++;
+    else if (e.status === 'queue-reviewed') queueReviewed++;
   }
 
-  return { aiRealtime, autoSynced, doctorReviewed };
+  return { aiVerified, autocaptured, assistedCapture, queueReviewed };
 }
 
 // ── Component ───────────────────────────────────────────────
@@ -192,7 +217,7 @@ export default function HistoryScreen() {
           onPress={() => {
             router.push(`/record/${item.id}`);
           }}
-          activeOpacity={0.7}
+          activeOpacity={1}
         >
           <Card style={styles.listItem}>
             <CardContent style={styles.listItemContent}>
@@ -208,52 +233,19 @@ export default function HistoryScreen() {
                 <Text weight="SemiBold" style={styles.patientName} numberOfLines={1}>
                   {item.patient}
                 </Text>
+
                 <View style={styles.metaRow}>
-                  <Ionicons
-                    name="time-outline"
-                    size={12}
-                    color={colors.mutedForeground}
-                  />
-                  <Text style={styles.metaText}>{item.time}</Text>
-                  <Text style={styles.metaDot}>·</Text>
-                  <Ionicons
-                    name="document-text-outline"
-                    size={12}
-                    color={colors.mutedForeground}
-                  />
-                  <Text style={styles.metaText}>
-                    {item.notesCount} note{item.notesCount !== 1 ? 's' : ''}
+                  <Text weight="Medium" style={[styles.metaText, { color: getStatusColors(item.status).text }]}>
+                    {statusLabel(item.status)}
                   </Text>
+                  <Text style={styles.metaDot}>·</Text>
+                  <Text style={styles.metaText}>{item.time}</Text>
                 </View>
               </View>
 
-              {/* Status + Confidence */}
-              <View style={styles.rightCol}>
-                <Badge
-                  style={{
-                    backgroundColor: getStatusColors(item.status).bg,
-                    borderColor: getStatusColors(item.status).border,
-                    borderWidth: 1,
-                  }}
-                  textStyle={{ color: getStatusColors(item.status).text }}
-                >
-                  {statusLabel(item.status)}
-                </Badge>
-                {item.confidence > 0 && (
-                  <View
-                    style={[
-                      styles.confidencePill,
-                      {
-                        backgroundColor: confBg.bg,
-                        borderColor: confBg.border,
-                      },
-                    ]}
-                  >
-                    <Text weight="Bold" style={[styles.confidenceText, { color: confBg.text }]}>
-                      {item.confidence}%
-                    </Text>
-                  </View>
-                )}
+              {/* Action Pill / Confidence */}
+              <View style={styles.actionPill}>
+                 <CircularProgress value={item.confidence} size={32} strokeWidth={4} showText={true} />
               </View>
             </CardContent>
           </Card>
@@ -289,35 +281,38 @@ export default function HistoryScreen() {
     <View style={{ paddingTop: spacing.md }}>
       {/* ── Summary Cards ────────────────────────────────── */}
       <View style={styles.summaryRow}>
-        <SummaryCard
-          icon="sparkles"
-          label="AI Verified"
-          count={summary.aiRealtime}
-          color="#10B981"
-          bg="rgba(16, 185, 129, 0.12)"
-        />
-        <SummaryCard
-          icon="cloud-upload-outline"
-          label="Auto-synced"
-          count={summary.autoSynced}
-          color="#F59E0B"
-          bg="rgba(245, 158, 11, 0.12)"
-        />
-        <SummaryCard
-          icon="checkmark-circle-outline"
-          label="Reviewed"
-          count={summary.doctorReviewed}
-          color="#3B82F6"
-          bg="rgba(59, 130, 246, 0.12)"
-        />
+        <View style={{ flex: 1, flexDirection: 'row', gap: spacing.md }}>
+          <SummaryCard
+            icon="sparkles"
+            label="AI Verified"
+            count={summary.aiVerified}
+            color="#10B981"
+            bg="rgba(16, 185, 129, 0.12)"
+          />
+          <SummaryCard
+            icon="flash-outline"
+            label="Autocaptured"
+            count={summary.autocaptured}
+            color="#3B82F6"
+            bg="rgba(59, 130, 246, 0.12)"
+          />
+          <SummaryCard
+            icon="pencil-outline"
+            label="Assisted"
+            count={summary.assistedCapture}
+            color="#F59E0B"
+            bg="rgba(245, 158, 11, 0.12)"
+          />
+          <SummaryCard
+            icon="list-outline"
+            label="Queue Rev."
+            count={summary.queueReviewed}
+            color="#8B5CF6"
+            bg="rgba(139, 92, 246, 0.12)"
+          />
+        </View>
       </View>
 
-      {/* ── Status Legend ─────────────────────────────────── */}
-      <View style={styles.legendRow}>
-        <LegendPill color="#10B981" label="AI Verified" />
-        <LegendPill color="#F59E0B" label="Pending Sync" />
-        <LegendPill color="#3B82F6" label="Doctor Reviewed" />
-      </View>
     </View>
   );
 
@@ -474,12 +469,10 @@ const styles = StyleSheet.create({
   },
   summaryCount: {
     fontSize: fontSize.xl,
-    fontWeight: fontWeight.bold,
     color: colors.foreground,
   },
   summaryLabel: {
     fontSize: fontSize.xs,
-    fontWeight: fontWeight.medium,
     color: colors.mutedForeground,
     marginTop: 2,
     textAlign: 'center',
@@ -510,7 +503,6 @@ const styles = StyleSheet.create({
   },
   legendText: {
     fontSize: fontSize.xs,
-    fontWeight: fontWeight.medium,
     color: colors.mutedForeground,
   },
 
@@ -539,7 +531,6 @@ const styles = StyleSheet.create({
   },
   avatarText: {
     fontSize: fontSize.md,
-    fontWeight: fontWeight.bold,
     color: colors.primary,
   },
 
@@ -549,7 +540,6 @@ const styles = StyleSheet.create({
   },
   patientName: {
     fontSize: fontSize.md,
-    fontWeight: fontWeight.semibold,
     color: colors.foreground,
     marginBottom: 2,
   },
@@ -582,8 +572,7 @@ const styles = StyleSheet.create({
   },
   confidenceText: {
     fontSize: fontSize.xs,
-    fontWeight: fontWeight.bold,
-  },
+    },
 
   // Empty state
   emptyState: {
@@ -593,7 +582,6 @@ const styles = StyleSheet.create({
   },
   emptyTitle: {
     fontSize: fontSize.lg,
-    fontWeight: fontWeight.semibold,
     color: colors.foreground,
     marginTop: spacing.lg,
     marginBottom: spacing.sm,
@@ -604,5 +592,11 @@ const styles = StyleSheet.create({
     textAlign: 'center',
     lineHeight: 22,
     paddingHorizontal: spacing.xxl,
+  },
+  actionPill: {
+    width: 44,
+    height: 44,
+    justifyContent: 'center',
+    alignItems: 'center',
   },
 });

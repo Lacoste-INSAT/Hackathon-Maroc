@@ -58,10 +58,9 @@ export function CardContent({ children, style }: CardContentProps) {
 const styles = StyleSheet.create({
   card: {
     backgroundColor: colors.card,
-    borderRadius: borderRadius.xl,
+    borderRadius: borderRadius.lg,
     borderWidth: 1,
-    borderColor: colors.cardBorder,
-    ...shadow.md, // Colored Corporate Trust shadow
+    borderColor: colors.border,
   },
   cardHeader: {
     paddingHorizontal: spacing.lg,

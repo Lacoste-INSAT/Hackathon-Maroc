@@ -165,7 +165,7 @@ async function processItem(item: SyncQueueItem, db: any): Promise<void> {
 
   // 0. Initial Setup
   const user = await getCurrentUser();
-  if (!user) throw new Error('[cloudSync] User not authenticated during sync');
+  const userId = user ? user.id : '00000000-0000-0000-0000-000000000000';
 
   const record = await db.getFirstAsync(
     'SELECT * FROM records WHERE id = ?',
@@ -195,7 +195,24 @@ async function processItem(item: SyncQueueItem, db: any): Promise<void> {
   await db.runAsync('UPDATE sessions SET synced = 1 WHERE id = ?', [session.id]);
 
   // Step C: Upload Image to Storage
-  const storagePath = await uploadToStorage(record, user.id);
+  const storagePath = await uploadToStorage(record, userId);
+
+  // Step C.5: AI Extraction (if missing, means we captured offline)
+  let finalConfidence = record.overall_confidence ?? 0;
+  if (!record.extracted_data) {
+    console.log('[cloudSync] AI Extraction running in background...');
+    try {
+      const localImagePath = record.compressed_image_path ?? record.original_image_path;
+      const { extractHandwritingFromBase64 } = require('@/services/geminiService');
+      const extraction = await extractHandwritingFromBase64(localImagePath);
+      const { updateRecordExtraction } = require('@/services/recordRepository');
+      await updateRecordExtraction(record.id, JSON.stringify(extraction), extraction.overallConfidence);
+      finalConfidence = extraction.overallConfidence;
+    } catch (e) {
+      console.warn('[cloudSync] Background extraction failed:', e);
+      // It will just be approved with no extraction data, meaning 0% confidence -> queue-reviewed
+    }
+  }
 
   // Step D: Get Public URL and upsert Record
   await upsertRecord(record, storagePath);

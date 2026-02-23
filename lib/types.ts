@@ -133,7 +133,7 @@ export type CapturePhase =
 
 // ── History ──────────────────────────────────────────────────
 
-export type HistoryStatus = 'ai-realtime' | 'auto-synced' | 'doctor-reviewed';
+export type HistoryStatus = 'autocaptured' | 'assisted-capture' | 'ai-verified' | 'queue-reviewed' | 'pending-sync';
 
 export interface HistoryEntry {
   id: string;

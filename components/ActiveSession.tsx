@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { View, StyleSheet, Alert, Text, TouchableOpacity, Image, ScrollView, ActivityIndicator } from 'react-native';
+import { View, StyleSheet, Alert, Text, TouchableOpacity, Image, ScrollView, ActivityIndicator, TextInput } from 'react-native';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { DocumentCamera } from '@/components/DocumentCamera';
 import { useNetworkState } from '@/hooks/useNetworkState';
@@ -9,8 +9,8 @@ import { updateRecordExtraction } from '@/services/recordRepository';
 import { extractHandwritingFromBase64 } from '@/services/geminiService';
 import { colors, spacing, borderRadius, fontSize, shadow } from '@/lib/theme';
 import { Ionicons } from '@expo/vector-icons';
-import { Card, CardContent } from '@/components/ui/Card';
-import { Button } from '@/components/ui/Button';
+import { Card, CardContent } from '@/components/ui/card';
+import { Button } from '@/components/ui/button';
 import type { Session } from '@/lib/types';
 import { useSyncStore } from '@/stores/useSyncStore';
 import { getDatabase } from '@/services/database';
@@ -108,12 +108,22 @@ export function ActiveSession({ sessionId }: ActiveSessionProps) {
       // 1. Create the record and get ID
       const recordId = await enqueuePhoto(session.id, capturedUri);
       
-      // 2. Immediately update the record with the extracted JSON so sync_worker 
-      //    just uploads it as-is.
+      // 2. Build corrections JSON to prove human review happened (Autocaptured vs Assisted)
+      const corrections = extractedData.fields.map((f: any) => ({
+        label: f.label,
+        originalValue: f.originalValue ?? f.value,
+        correctedValue: f.value,
+        confidence: f.confidence
+      }));
+      // Import updateRecordCorrections to use here
+      const { updateRecordCorrections } = require('@/services/recordRepository');
+      await updateRecordCorrections(recordId, JSON.stringify(corrections));
+
+      // 3. Update extraction so sync_worker uploads it
       await updateRecordExtraction(
         recordId,
-        JSON.stringify(extractedData),
-        extractedData.overallConfidence // Use extracted confidence
+        JSON.stringify({ ...extractedData, fields: extractedData.fields.map((f: any) => ({ label: f.label, value: f.value, confidence: f.confidence })) }),
+        extractedData.overallConfidence 
       );
 
       Alert.alert('Saved', 'Record approved and saved to system.');
@@ -313,10 +323,25 @@ export function ActiveSession({ sessionId }: ActiveSessionProps) {
             <View key={field.label || idx} style={styles.fieldBox}>
               <View style={styles.fieldHeader}>
                 <Text style={styles.fieldLabel}>{field.label}</Text>
-                <Text style={styles.fieldScore}>{field.confidence}%</Text>
+                <Text style={styles.fieldScore}>{Math.round(field.confidence)}%</Text>
               </View>
               <View style={styles.inputMock}>
-                <Text style={styles.inputText}>{field.value}</Text>
+                <TextInput 
+                  style={styles.inputText}
+                  value={field.value}
+                  onChangeText={(text: string) => {
+                     setExtractedData((prev: any) => {
+                       const newFields = [...prev.fields];
+                       // Store original value on first edit if not set
+                       if (newFields[idx].originalValue === undefined) {
+                         newFields[idx].originalValue = newFields[idx].value;
+                       }
+                       newFields[idx].value = text;
+                       return { ...prev, fields: newFields };
+                     });
+                  }}
+                  multiline={true}
+                />
               </View>
             </View>
           ))}

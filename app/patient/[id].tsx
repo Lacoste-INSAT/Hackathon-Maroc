@@ -1,7 +1,7 @@
 import React from 'react';
 import { View, Text, StyleSheet } from 'react-native';
 import { useLocalSearchParams, useRouter } from 'expo-router';
-import { Button } from '@/components/ui/Button';
+import { Button } from '@/components/ui/button';
 import { colors, spacing, borderRadius } from '@/lib/theme';
 import { Ionicons } from '@expo/vector-icons';
 
