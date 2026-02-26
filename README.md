@@ -68,3 +68,84 @@ A blazingly fast, **offline-first** mobile application designed to securely capt
 
 ---
 *Built for speed, reliability, and modern medical data entry.* 🩺📱
+
+---
+
+## 🌐 TabibNet — Portail Web Patient (Prise de Rendez-vous)
+
+En complément de l'app mobile médecin, nous avons développé un **site web patient** complet pour la gestion de rendez-vous médicaux.
+
+### ✨ Fonctionnalités Web
+
+| Fonctionnalité | Description |
+|---|---|
+| 🔐 **Connexion OTP** | Les patients se connectent via numéro de téléphone (code OTP) |
+| 👨‍⚕️ **Liste des médecins** | Consultation des praticiens avec spécialité et cabinet |
+| 📅 **Réservation de créneaux** | Choix d'un créneau libre parmi les 7 prochains jours |
+| 🚫 **Anti double-booking** | Transaction PostgreSQL + `SELECT FOR UPDATE` + contrainte `UNIQUE` |
+| ❌ **Annulation** | Possible jusqu'à 2h avant le rendez-vous (configurable) |
+| 📱 **QR Check-in** | QR code unique par RDV, scannable à l'arrivée au cabinet |
+| 🩺 **Panneau médecin** | Gestion de l'emploi du temps, visualisation des arrivées, mise à jour des statuts |
+| 📝 **Audit** | Journalisation de chaque action (user_id, action, timestamp) |
+| 🔔 **Notifications** | Interface pluggable (mock console / Twilio SMS) |
+
+### 🏗 Stack Technique Web
+
+| Composant | Technologie |
+|---|---|
+| Frontend | **Next.js 14** + Tailwind CSS |
+| Backend API | **Express** + TypeScript |
+| Base de données | **PostgreSQL 16** |
+| Auth | **JWT** + OTP mock |
+| Déploiement | **Docker Compose** |
+
+### 🚀 Lancer le Site Web Patient
+
+**Prérequis** : [Docker Desktop](https://docs.docker.com/desktop/) installé et lancé.
+
+```bash
+# 1. Aller dans le dossier web-patient
+cd web-patient
+
+# 2. Lancer tous les services (DB + API + Frontend)
+docker compose up --build
+
+# 3. Dans un 2ème terminal, initialiser les données de démo
+cd web-patient
+docker compose exec backend npx tsx src/db/seed.ts
+```
+
+**Ouvrir le site** : 👉 **http://localhost:3000**
+
+### 🧪 Comptes de Démo
+
+| Rôle | Identifiant | Connexion |
+|------|-------------|-----------|
+| 🩺 Médecin | `doctor@tabib.dz` | mot de passe : `doctor123` → http://localhost:3000/doctor/login |
+| 👤 Patient 1 | `+213555100001` (Fatima) | Code OTP affiché à l'écran → http://localhost:3000/login |
+| 👤 Patient 2 | `+213555100002` (Karim) | Code OTP affiché à l'écran |
+| 👤 Patient 3 | `+213555100003` (Nadia) | Code OTP affiché à l'écran |
+
+### 📋 Scénarios de Démo
+
+**Réserver un rendez-vous (Patient)** :
+1. Ouvrir http://localhost:3000 → entrer `+213555100001` → recevoir le code OTP
+2. Choisir un médecin → sélectionner une date → cliquer un créneau vert → confirmer
+
+**Gérer l'emploi du temps (Médecin)** :
+1. Ouvrir http://localhost:3000/doctor/login → `doctor@tabib.dz` / `doctor123`
+2. Aller dans **Emploi du temps** → utiliser un preset ou ajouter manuellement
+3. Cliquer **Enregistrer** puis **Générer les créneaux**
+
+**Check-in le jour J** :
+1. Le patient va dans **Mes RDV** → clique **Check-in maintenant**
+2. Le médecin voit le statut passer à **Arrivé** dans son tableau de bord
+
+### 🛑 Arrêter le Site
+
+```bash
+docker compose down          # arrêter les conteneurs
+docker compose down -v       # arrêter ET supprimer les données
+```
+
+> Pour plus de détails, voir le [README complet du portail web](web-patient/README.md).
