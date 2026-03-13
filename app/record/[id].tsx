@@ -172,8 +172,19 @@ export default function RecordDetailScreen() {
       <View style={styles.header}>
         <Button variant="ghost" size="sm" onPress={() => router.back()}>
           <Ionicons name="arrow-back" size={20} color={colors.foreground} />
-          <Text weight="Medium" style={styles.backText}> Back</Text>
+          <Text weight="Medium" style={styles.backText}>Back</Text>
         </Button>
+        {!!(session && session.patient_code && session.patient_code !== '—') && (
+          <Button 
+            variant="outline" 
+            size="sm" 
+            onPress={() => router.push(`/patient/summary?patientCode=${session.patient_code}`)}
+            style={{ marginLeft: 'auto' } as any}
+          >
+            <Ionicons name="documents-outline" size={16} color={colors.primary} style={{ marginRight: 4 }} />
+            <Text style={{ color: colors.primary, fontWeight: '600' }}>Clinical Summary</Text>
+          </Button>
+        )}
       </View>
 
       <ScrollView style={styles.scroll} contentContainerStyle={styles.scrollContent} showsVerticalScrollIndicator={false}>
@@ -184,7 +195,7 @@ export default function RecordDetailScreen() {
               ? formatName(session.patient_name) 
               : formatCode(session?.patient_code)}
           </Text>
-          {session?.patient_name && session.patient_name !== 'Unknown Patient' && (
+          {!!(session?.patient_name && session.patient_name !== 'Unknown Patient') && (
             <Text style={styles.patientCode}>{formatCode(session?.patient_code)}</Text>
           )}
           <Text style={styles.dateText}>

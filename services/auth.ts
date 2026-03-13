@@ -135,7 +135,24 @@ export async function ensureSession(): Promise<Session> {
     return session;
   }
   console.log('[auth] No session found, signing in anonymously...');
-  return await signInAnonymously();
+  try {
+    return await signInAnonymously();
+  } catch (err) {
+    console.warn('[auth] Sign-in failed (likely offline). Yielding mock session to unblock local DB.');
+    return {
+      access_token: 'offline_token',
+      refresh_token: 'offline_token',
+      expires_in: 3600,
+      token_type: 'bearer',
+      user: {
+        id: 'offline-uuid-0000',
+        app_metadata: {},
+        user_metadata: {},
+        aud: 'authenticated',
+        created_at: new Date().toISOString(),
+      },
+    } as Session;
+  }
 }
 
 /**

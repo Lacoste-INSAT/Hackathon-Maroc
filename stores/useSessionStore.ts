@@ -205,7 +205,7 @@ export const useSessionStore = create<SessionStore>((set, get) => ({
             hour12: false,
           }),
           notesCount: 1,
-          status: "ai-realtime",
+          status: "ai-verified",
           confidence: result.overallConfidence,
         }
         set((s) => ({ history: [entry, ...s.history] }))
@@ -263,7 +263,7 @@ export const useSessionStore = create<SessionStore>((set, get) => ({
           hour12: false,
         }),
         notesCount: 1,
-        status: "doctor-reviewed",
+        status: "queue-reviewed",
         confidence: record.extractedData?.overallConfidence ?? 0,
       }
       set((s) => ({ history: [entry, ...s.history] }))

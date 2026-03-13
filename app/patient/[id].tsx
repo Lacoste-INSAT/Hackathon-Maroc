@@ -24,6 +24,15 @@ export default function PatientDetailPlaceholder() {
         </Text>
         
         <Button 
+          variant="outline" 
+          onPress={() => router.push(`/patient/summary?patientCode=${id}`)}
+          style={[styles.backButton, { marginBottom: spacing.md }] as any}
+        >
+          <Ionicons name="list-outline" size={20} color={colors.primary} style={{ marginRight: 8 }} />
+          Clinical Summary
+        </Button>
+
+        <Button 
           variant="primary" 
           onPress={() => router.back()}
           style={styles.backButton}

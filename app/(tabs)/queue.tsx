@@ -556,6 +556,7 @@ function DetailView({
   onBack,
 }: DetailViewProps) {
   const confidence = record.overall_confidence ?? 0;
+  const router = require('expo-router').useRouter();
 
   return (
     <View style={styles.container}>
@@ -565,17 +566,29 @@ function DetailView({
           <Ionicons name="arrow-back" size={20} color={colors.foreground} />
           <Text weight="Medium" style={styles.backText}> Back</Text>
         </Button>
-        <Badge
-          variant={
-            confidence >= 90
-              ? 'success'
-              : confidence >= 75
-              ? 'default'
-              : 'destructive'
-          }
-        >
-          {`Overall: ${Math.round(confidence)}%`}
-        </Badge>
+        <View style={{ flexDirection: 'row', gap: 8, alignItems: 'center', marginLeft: 'auto' } as any}>
+          {!!(record.patientCode && record.patientCode !== '—') && (
+            <Button 
+              variant="outline" 
+              size="sm" 
+              onPress={() => router.push(`/patient/summary?patientCode=${record.patientCode}`)}
+            >
+              <Ionicons name="documents-outline" size={16} color={colors.primary} style={{ marginRight: 4 }} />
+              <Text style={{ color: colors.primary, fontWeight: '600' }}>Summary</Text>
+            </Button>
+          )}
+          <Badge
+            variant={
+              confidence >= 90
+                ? 'success'
+                : confidence >= 75
+                ? 'default'
+                : 'destructive'
+            }
+          >
+            {`Overall: ${Math.round(confidence)}%`}
+          </Badge>
+        </View>
       </View>
 
       <ScrollView

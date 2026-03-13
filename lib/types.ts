@@ -101,6 +101,36 @@ export interface ExtractionResult {
   error?: boolean;
 }
 
+// ── Clinical Summary ─────────────────────────────────────────
+
+export interface PatientDataPoint {
+  id: string; // Unique identifier (e.g. recordId + label)
+  value: string;
+  confidence: number;
+  isVerified: boolean; // True if record status is 'approved'
+  dateRecorded: string; // ISO string 
+  sessionId: string;
+  recordId: string;
+}
+
+export interface ProblemNode {
+  diagnosis: string;
+  medications: PatientDataPoint[];
+  symptoms: PatientDataPoint[];
+}
+
+export interface PendingVerificationItem {
+  id: string; // Unique identifier
+  recordId: string;
+  sessionId: string;
+  dateRecorded: string;
+  originalImagePath: string; 
+  fieldLabel: string; // e.g., 'Symptoms', 'Diagnosis', 'Medication'
+  fieldValue: string;
+  confidence: number;
+  overallConfidence: number; 
+}
+
 // ── UI Session Record (in-memory, for Zustand store) ─────────
 
 export type UIRecordStatus =
