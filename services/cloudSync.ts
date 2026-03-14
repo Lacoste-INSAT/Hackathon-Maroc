@@ -200,7 +200,8 @@ async function processItem(item: SyncQueueItem, db: any): Promise<void> {
   // Step C.5: AI Extraction (if missing, means we captured offline)
   let finalConfidence = record.overall_confidence ?? 0;
   if (!record.extracted_data) {
-    console.log('[cloudSync] AI Extraction running in background...');
+    console.log('[EXTRACTION] Starting for record:', record.id);
+    console.log('[EXTRACTION] Image URL:', record.compressed_image_path ?? record.original_image_path);
     try {
       const localImagePath = record.compressed_image_path ?? record.original_image_path;
       const { extractHandwritingFromBase64 } = require('@/services/geminiService');
@@ -208,6 +209,7 @@ async function processItem(item: SyncQueueItem, db: any): Promise<void> {
       const { updateRecordExtraction } = require('@/services/recordRepository');
       await updateRecordExtraction(record.id, JSON.stringify(extraction), extraction.overallConfidence);
       finalConfidence = extraction.overallConfidence;
+      console.log('[EXTRACTION] Wrote extracted_data, new status: approved');
     } catch (e) {
       console.warn('[cloudSync] Background extraction failed:', e);
       // It will just be approved with no extraction data, meaning 0% confidence -> queue-reviewed

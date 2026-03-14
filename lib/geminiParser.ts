@@ -29,8 +29,35 @@ export function parseGeminiResponse(rawText: string): ExtractionResult {
   try {
     const parsed = JSON.parse(jsonMatch[0]);
 
+    // Safely parse fields and filter out nulls or conversational filler
+    const rawFields = Array.isArray(parsed.fields) ? parsed.fields : [];
+    const sanitizedFields = rawFields
+      .filter((f: any) => f && f.label && typeof f.label === 'string')
+      .map((f: any) => {
+        let val = f.value;
+        // Clean conversational fillers if Gemini disobeys instructions
+        if (typeof val === 'string') {
+          const lower = val.trim().toLowerCase();
+          const labelLower = f.label.trim().toLowerCase();
+          
+          // Hardcoded sanitation check: if value is literally just the field name
+          if (lower === labelLower) {
+            val = null;
+          } 
+          else if (["not specified", "n/a", "none", "unknown", "null"].includes(lower) || lower === "") {
+            val = null;
+          }
+        }
+        return {
+          label: f.label,
+          value: val,
+          confidence: typeof f.confidence === 'number' ? f.confidence : 0
+        };
+      })
+      .filter((f: any) => f.value !== null && f.value !== undefined && f.value !== "");
+
     return {
-      fields: Array.isArray(parsed.fields) ? parsed.fields : [],
+      fields: sanitizedFields,
       overallConfidence: typeof parsed.overallConfidence === 'number' ? parsed.overallConfidence : 0,
       predictionScore: typeof parsed.predictionScore === 'number' ? parsed.predictionScore : 0,
     };

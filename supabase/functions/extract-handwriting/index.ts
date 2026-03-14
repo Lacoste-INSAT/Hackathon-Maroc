@@ -19,43 +19,44 @@ const GEMINI_URL = `https://generativelanguage.googleapis.com/v1beta/models/${GE
 const TIMEOUT_MS = 20_000;
 const CONFIDENCE_THRESHOLD = 80;
 
-const SYSTEM_PROMPT = `You are a medical handwriting extraction AI for a Hybrid EMR system used in clinics across Algeria.
+const SYSTEM_PROMPT = `You are a strict data extraction API for a Hybrid EMR system.
 
 Your task: Analyze the handwritten medical document image and extract structured clinical data.
 
 CONTEXT:
 - Handwriting is often in French, Arabic, or a mix of both
-- Expect French medical shorthand: "Matin/Midi/Soir", "1x3/j" (once 3 times per day), "cp" (comprimé/tablet), "inj" (injection), "gtte" (gouttes/drops)
+- Expect French medical shorthand: "Matin/Midi/Soir", "1x3/j", "cp", "inj", "gtte"
 - Expect Arabic medical terms alongside French
-- Dosage formats vary: "2x/jour pendant 7j", "1cp matin et soir", etc.
+- Dosage formats vary
 
 EXTRACT THESE FIELDS:
-1. Symptoms — Patient symptoms described by the doctor
-2. Diagnosis — Medical diagnosis
-3. Medication — Prescribed medication name and strength
-4. Dosage — Dosage instructions (frequency, duration)
-5. Notes — Additional notes, follow-up instructions, observations
+1. Symptoms
+2. Diagnosis
+3. Medication
+4. Dosage
+5. Notes
 
-RETURN ONLY THIS JSON (no markdown, no explanation):
+RETURN ONLY THIS EXACT JSON FORMAT (no markdown, no explanation):
 {
   "fields": [
-    { "label": "Symptoms", "value": "...", "confidence": <0-100> },
-    { "label": "Diagnosis", "value": "...", "confidence": <0-100> },
-    { "label": "Medication", "value": "...", "confidence": <0-100> },
-    { "label": "Dosage", "value": "...", "confidence": <0-100> },
-    { "label": "Notes", "value": "...", "confidence": <0-100> }
+    { "label": "Symptoms", "value": "...or null...", "confidence": <0-100> },
+    { "label": "Diagnosis", "value": "...or null...", "confidence": <0-100> },
+    { "label": "Medication", "value": "...or null...", "confidence": <0-100> },
+    { "label": "Dosage", "value": "...or null...", "confidence": <0-100> },
+    { "label": "Notes", "value": "...or null...", "confidence": <0-100> }
   ],
   "overallConfidence": <0-100>,
   "predictionScore": <0-100>
 }
 
-RULES:
-- If a field is illegible, set value to "(?) [best guess]" and confidence below 50
+CRITICAL RULES:
+- If a field (like Diagnosis, Medication, or Symptom) is missing from the document, you MUST return null or "".
+- Do NOT output conversational filler like "Not specified", "N/A", "Unknown", or "(?) [best guess]". 
+- Do NOT return the name of the field as the value (e.g., if the diagnosis is missing, return null, do NOT return the word "Diagnosis").
+- Output valid, raw JSON only. Do not wrap in markdown \`\`\`json blocks.
 - overallConfidence = weighted average of all field confidences
 - predictionScore = your certainty that the extraction is medically accurate
-- Be conservative: only score above 90 for clearly legible text
-- For partially legible text, include your best guess with appropriate confidence
-- Respond with ONLY the JSON object`;
+- Respond with ONLY the JSON object.`;
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -172,6 +173,7 @@ Deno.serve(async (req: Request) => {
         generationConfig: {
           temperature: 0.1,
           maxOutputTokens: 1024,
+          responseMimeType: "application/json"
         },
       }),
     });
@@ -221,8 +223,36 @@ Deno.serve(async (req: Request) => {
       );
     }
 
-    const parsed = JSON.parse(jsonMatch[0]);
-    const overallConfidence = parsed.overallConfidence ?? 0;
+    let parsed;
+    try {
+      parsed = JSON.parse(jsonMatch[0]);
+    } catch (e) {
+      return new Response(JSON.stringify({ error: 'Failed to parse JSON', details: String(e) }), { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
+    }
+
+    // Hardcoded post-processing to destroy hallucinations
+    if (parsed && Array.isArray(parsed.fields)) {
+      parsed.fields = parsed.fields.map((f: any) => {
+        let val = f.value;
+        if (typeof val === 'string') {
+          const lower = val.trim().toLowerCase();
+          const labelLower = (f.label || '').trim().toLowerCase();
+          if (
+            lower === labelLower || 
+            lower.includes('not specified') || 
+            lower === 'n/a' || 
+            lower === 'none' || 
+            lower === 'unknown' || 
+            lower === ''
+          ) {
+            val = null;
+          }
+        }
+        return { ...f, value: val };
+      });
+    }
+
+    const overallConfidence = parsed?.overallConfidence ?? 0;
 
     // ── Step 6: Update the record ──
     const isAutoApproved = overallConfidence >= CONFIDENCE_THRESHOLD;
@@ -254,6 +284,13 @@ Deno.serve(async (req: Request) => {
         JSON.stringify({ error: 'Failed to update record', details: updateError.message }),
         { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
       );
+    }
+
+    if (isAutoApproved) {
+        // Step 7: Automatically trigger embedding generation
+        supabase.functions.invoke('generate-embedding', {
+          body: { record_id }
+        }).catch(err => console.error('[extract-handwriting] Failed to trigger embedding pipeline:', err));
     }
 
     console.log(

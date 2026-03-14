@@ -18,12 +18,54 @@ import NetInfo, { type NetInfoState } from '@react-native-community/netinfo';
 import { syncAllPending } from './cloudSync';
 import { getQueueStats } from './offlineQueue';
 import { useSyncStore } from '@/stores/useSyncStore';
+import { supabase } from '@/lib/supabase';
+import { ingestOrdonnanceIntoGraph } from './patientDataService';
 
 const DEBOUNCE_MS = 3000;    // 3 seconds debounce
 let _unsubscribe: (() => void) | null = null;
 let _isSyncing = false;       // mutex lock
 let _debounceTimer: ReturnType<typeof setTimeout> | null = null;
 let _wasOnline = false;        // track previous state for edge detection
+
+/**
+ * Background batch ingestion: embeds up to 10 unembedded records
+ * across ALL patients per app launch. This gradually populates
+ * embeddings for cross-patient Knowledge Graph search.
+ */
+async function ingestAllUnembeddedRecords(): Promise<void> {
+  console.log('[BG_INGEST] Checking for unembedded records across all patients...');
+  
+  try {
+    const { data: unembedded, error } = await supabase
+      .from('records')
+      .select('id, session_id, extracted_data')
+      .is('embedding', null)
+      .not('extracted_data', 'is', null)
+      .limit(10);
+    
+    if (error || !unembedded || unembedded.length === 0) {
+      console.log('[BG_INGEST] No unembedded records found or error:', error?.message);
+      return;
+    }
+    
+    console.log('[BG_INGEST] Found', unembedded.length, 'records to embed');
+    
+    for (const record of unembedded) {
+      const textPayload = typeof record.extracted_data === 'string'
+        ? record.extracted_data
+        : JSON.stringify(record.extracted_data);
+      
+      if (!textPayload || textPayload === '{}' || textPayload.length < 10) continue;
+      
+      console.log('[BG_INGEST] Embedding record:', record.id);
+      await ingestOrdonnanceIntoGraph(record.id, textPayload);
+    }
+    
+    console.log('[BG_INGEST] Background ingestion complete.');
+  } catch (e: any) {
+    console.error('[BG_INGEST] Failed:', e?.message);
+  }
+}
 
 /**
  * Attempts to sync all pending items.
@@ -39,6 +81,8 @@ async function attemptSync(): Promise<void> {
   const stats = await getQueueStats();
   if (stats.pendingCount === 0) {
     console.log('[backgroundSync] Queue empty, nothing to sync');
+    // Still run background embedding even when queue is empty
+    await ingestAllUnembeddedRecords();
     return;
   }
 
@@ -50,6 +94,9 @@ async function attemptSync(): Promise<void> {
     console.log(
       `[backgroundSync] Sync complete: ${result.synced} synced, ${result.failed} failed`
     );
+    
+    // After queue sync, embed any records across ALL patients that are missing embeddings
+    await ingestAllUnembeddedRecords();
   } catch (error) {
     const msg = error instanceof Error ? error.message : String(error);
     console.error('[backgroundSync] Sync error:', msg);

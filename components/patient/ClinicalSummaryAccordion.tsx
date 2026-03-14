@@ -27,7 +27,11 @@ export function AccordionItem({ problem, onRecordTap }: { problem: ProblemNode; 
     transform: [{ rotate: `${rotation.value}deg` }]
   }));
 
-  const totalItems = problem.medications.length + problem.symptoms.length;
+  const validDiagnoses = problem.diagnoses?.filter(diag => diag.value?.trim().length > 0) || [];
+  const validMeds = problem.medications.filter(med => med.value?.trim().length > 0);
+  const validSymp = problem.symptoms.filter(sym => sym.value?.trim().length > 0);
+
+  const totalItems = validMeds.length + validSymp.length + validDiagnoses.length;
 
   return (
     <Animated.View layout={LinearTransition.duration(200)} style={styles.card}>
@@ -55,19 +59,28 @@ export function AccordionItem({ problem, onRecordTap }: { problem: ProblemNode; 
           exiting={FadeOut.duration(200)}
           style={styles.cardBody}
         >
-          {problem.medications.length > 0 && (
+          {validDiagnoses.length > 0 && (
+            <View style={styles.section}>
+              <Text style={styles.sectionTitle}>Diagnosis</Text>
+              {validDiagnoses.map(diag => (
+                <DataPointRow key={diag.id} item={diag} icon="medical-outline" onRecordTap={onRecordTap} />
+              ))}
+            </View>
+          )}
+
+          {validMeds.length > 0 && (
             <View style={styles.section}>
               <Text style={styles.sectionTitle}>Medications / Plan</Text>
-              {problem.medications.map(med => (
+              {validMeds.map(med => (
                 <DataPointRow key={med.id} item={med} icon="medkit-outline" onRecordTap={onRecordTap} />
               ))}
             </View>
           )}
 
-          {problem.symptoms.length > 0 && (
+          {validSymp.length > 0 && (
             <View style={styles.section}>
               <Text style={styles.sectionTitle}>Symptoms / Notes</Text>
-              {problem.symptoms.map(sym => (
+              {validSymp.map(sym => (
                 <DataPointRow key={sym.id} item={sym} icon="medical" onRecordTap={onRecordTap} />
               ))}
             </View>

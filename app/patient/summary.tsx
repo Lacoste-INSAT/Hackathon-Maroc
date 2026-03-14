@@ -1,19 +1,22 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useState, useRef } from 'react';
 import { View, Text, StyleSheet, ActivityIndicator, Alert } from 'react-native';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { colors, spacing, borderRadius } from '@/lib/theme';
 import { Ionicons } from '@expo/vector-icons';
-import { getPatientProblemTree } from '@/services/patientDataService';
+import { getPatientProblemTree, getClinicalNarrative, getClinicalInsights, ingestOrdonnanceIntoGraph } from '@/services/patientDataService';
 import { updateRecordStatus, updateRecordExtraction, getRecordById } from '@/services/recordRepository';
+import { supabase } from '@/lib/supabase';
 import { updateQueueItemStatus } from '@/services/offlineQueue';
 import { getDatabase } from '@/services/database';
 import { ProblemNode, PendingVerificationItem, ExtractionResult } from '@/lib/types';
 import { AIVerificationInbox } from '@/components/patient/AIVerificationInbox';
 import { AccordionItem } from '@/components/patient/ClinicalSummaryAccordion';
+import { ClinicalInsights } from '@/components/patient/ClinicalInsights';
 import { useNetInfo } from '@react-native-community/netinfo';
 import { Button } from '@/components/ui/button';
 import { FlashList } from '@shopify/flash-list';
 import { debouncedSync } from '@/services/backgroundSync';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 
 export default function ClinicalSummaryScreen() {
   const { patientCode } = useLocalSearchParams<{ patientCode: string }>();
@@ -23,7 +26,11 @@ export default function ClinicalSummaryScreen() {
   const [loading, setLoading] = useState(true);
   const [problemTree, setProblemTree] = useState<ProblemNode[]>([]);
   const [pendingVerifications, setPendingVerifications] = useState<PendingVerificationItem[]>([]);
+  const [narrative, setNarrative] = useState<string | null>(null);
+  const [insights, setInsights] = useState<string | null>(null);
   const [refreshing, setRefreshing] = useState(false);
+  const [refreshingNarrative, setRefreshingNarrative] = useState(false);
+  const _insightsRunRef = useRef(false);
 
   const loadData = async () => {
     if (!patientCode) return;
@@ -32,6 +39,113 @@ export default function ClinicalSummaryScreen() {
       const data = await getPatientProblemTree(patientCode, isOnline);
       setProblemTree(data.problemTree);
       setPendingVerifications(data.pendingVerifications);
+
+      if (isOnline) {
+        const { data: colCheck, error: colErr } = await supabase
+          .from('records')
+          .select('id, embedding, diagnoses, drugs, symptoms')
+          .limit(1);
+        
+        console.log('[MIGRATION CHECK] data:', JSON.stringify(colCheck));
+        console.log('[MIGRATION CHECK] error:', JSON.stringify(colErr));
+
+        let cachedNarrative = null;
+        let currentPatientId = null;
+
+        try {
+          const { data: patient } = await supabase.from('patients').select('id, clinical_summary').eq('patient_code', patientCode).single();
+          if (patient) {
+            cachedNarrative = patient.clinical_summary;
+            currentPatientId = patient.id;
+          }
+        } catch (e) {
+          console.error('[ClinicalSummary] Failed to run graph ingestion check:', e);
+        }
+
+        // CORRECT cache behavior: 
+        if (cachedNarrative) {
+          setNarrative(cachedNarrative);
+        } else {
+          const narrativeText = await getClinicalNarrative(patientCode, data.problemTree);
+          setNarrative(narrativeText);
+        }
+        
+        if (currentPatientId) {
+          console.log('[SUMMARY] Starting ingestion check...');
+          
+          const { data: sessions } = await supabase
+            .from('sessions')
+            .select('id')
+            .eq('patient_id', currentPatientId);
+          
+          if (sessions && sessions.length > 0) {
+            const sessionIds = sessions.map(s => s.id);
+            
+            const { data: unembeddedRecords, error: embedErr } = await supabase
+              .from('records')
+              .select('id, status')
+              .in('session_id', sessionIds)
+              .is('embedding', null);
+            
+            console.log('[SUMMARY] Unembedded (no embedding yet):', 
+              unembeddedRecords?.length, 
+              'error:', JSON.stringify(embedErr));
+            
+            if (unembeddedRecords && unembeddedRecords.length > 0) {
+              const localPayload = JSON.stringify(
+                data.problemTree?.map((visit: any) => ({
+                  diagnoses: visit.diagnoses?.map((d: any) => d.value) ?? [],
+                  medications: visit.medications?.map((m: any) => m.value) ?? [],
+                  symptoms: visit.symptoms?.map((s: any) => s.value) ?? []
+                })) ?? []
+              );
+
+              console.log('[SUMMARY] Starting ingestion...');
+              
+              // Call ingest only for the FIRST record — it does NER + embed
+              const firstRecord = unembeddedRecords[0];
+              await ingestOrdonnanceIntoGraph(firstRecord.id, localPayload);
+              
+              // If there are more records from the same visit/patient,
+              // copy the embedding from the first record instead of re-calling Gemini
+              if (unembeddedRecords.length > 1) {
+                const { data: firstEmbedded } = await supabase
+                  .from('records')
+                  .select('embedding, diagnoses, drugs, symptoms')
+                  .eq('id', firstRecord.id)
+                  .single();
+                
+                if (firstEmbedded?.embedding) {
+                  const remainingIds = unembeddedRecords.slice(1).map(r => r.id);
+                  
+                  for (const recordId of remainingIds) {
+                    console.log('[SUMMARY] Copying embedding to related record:', recordId);
+                    await supabase
+                      .from('records')
+                      .update({
+                        embedding: firstEmbedded.embedding,
+                        diagnoses: firstEmbedded.diagnoses,
+                        drugs: firstEmbedded.drugs,
+                        symptoms: firstEmbedded.symptoms
+                      })
+                      .eq('id', recordId);
+                  }
+                }
+              }
+              console.log('[SUMMARY] Ingestion complete.');
+            }
+          }
+        }
+        
+        console.log('[SUMMARY] Now fetching insights...');
+        if (!_insightsRunRef.current) {
+          _insightsRunRef.current = true;
+          const insightData = await getClinicalInsights(patientCode, data.problemTree);
+          setInsights(insightData);
+        } else {
+          console.log('[SUMMARY] Insights already fetched, skipping duplicate call');
+        }
+      }
     } catch (error) {
       console.error('[ClinicalSummary] Failed to load data:', error);
       Alert.alert('Error', 'Failed to load clinical summary.');
@@ -43,11 +157,38 @@ export default function ClinicalSummaryScreen() {
 
   useEffect(() => {
     loadData();
-  }, [patientCode, netInfo.isConnected]);
+  }, [patientCode]);
 
-  const handleRefresh = () => {
-    setRefreshing(true);
-    loadData();
+  const handleRefresh = async (forceNarrativeRefresh = false) => {
+    if (forceNarrativeRefresh && netInfo.isConnected) {
+      const REFRESH_COOLDOWN_MS = 60_000;
+      const lastRefresh = await AsyncStorage.getItem(`narrative_refresh_${patientCode}`);
+      const now = Date.now();
+      
+      if (lastRefresh && now - parseInt(lastRefresh, 10) < REFRESH_COOLDOWN_MS) {
+        Alert.alert('Please wait', 'Please wait 60 seconds before regenerating the summary.');
+        return;
+      }
+      
+      setRefreshingNarrative(true);
+      try {
+        await AsyncStorage.setItem(`narrative_refresh_${patientCode}`, String(now));
+        const narrativeText = await getClinicalNarrative(patientCode as string, problemTree, true);
+        setNarrative(narrativeText);
+        
+        const insightData = await getClinicalInsights(patientCode as string, problemTree);
+        setInsights(insightData);
+      } catch (error) {
+        console.error('Failed to force refresh narrative:', error);
+      } finally {
+        setRefreshingNarrative(false);
+      }
+    } else {
+      setRefreshing(true);
+      _insightsRunRef.current = false; // allow refresh to re-run
+      await loadData();
+      setRefreshing(false);
+    }
   };
 
   const queueRecordUpdate = async (recordId: string) => {
@@ -139,12 +280,33 @@ export default function ClinicalSummaryScreen() {
           refreshing={refreshing}
           contentContainerStyle={styles.scrollContent}
           ListHeaderComponent={
-            <AIVerificationInbox 
-              items={pendingVerifications} 
-              onApprove={handleApprove}
-              onReject={handleReject}
-              onEdit={handleEdit}
-            />
+            <View>
+              {narrative ? (
+                <View style={styles.narrativeContainer}>
+                  <View style={styles.narrativeHeader}>
+                    <Text style={styles.narrativeTitle}>Clinical Handover Note</Text>
+                    <Button variant="ghost" size="sm" onPress={() => handleRefresh(true)} disabled={refreshingNarrative}>
+                      {refreshingNarrative ? (
+                        <ActivityIndicator size="small" color={colors.primary} />
+                      ) : (
+                        <Ionicons name="refresh" size={16} color={colors.primary} />
+                      )}
+                    </Button>
+                  </View>
+                  <Text style={styles.narrativeText}>{narrative.replace(/\*\*/g, '')}</Text>
+                </View>
+              ) : null}
+
+              {insights && insights.length > 0 ? (
+                <ClinicalInsights insight={insights} />
+              ) : null}
+              <AIVerificationInbox 
+                items={pendingVerifications} 
+                onApprove={handleApprove}
+                onReject={handleReject}
+                onEdit={handleEdit}
+              />
+            </View>
           }
           ListEmptyComponent={
             !loading ? (
@@ -201,6 +363,31 @@ const styles = StyleSheet.create({
   scrollContent: {
     paddingTop: spacing.lg,
     paddingBottom: spacing.xxl,
+  },
+  narrativeContainer: {
+    marginHorizontal: spacing.md,
+    marginBottom: spacing.lg,
+    padding: spacing.md,
+    backgroundColor: colors.card,
+    borderRadius: borderRadius.md,
+    borderWidth: 1,
+    borderColor: colors.border,
+  },
+  narrativeHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: spacing.sm,
+  },
+  narrativeTitle: {
+    fontSize: 16,
+    fontWeight: 'bold',
+    color: colors.foreground,
+  },
+  narrativeText: {
+    fontSize: 14,
+    color: colors.foreground,
+    lineHeight: 20,
   },
   emptyContainer: {
     alignItems: 'center',

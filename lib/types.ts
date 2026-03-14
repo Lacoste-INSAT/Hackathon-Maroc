@@ -117,6 +117,7 @@ export interface ProblemNode {
   diagnosis: string;
   medications: PatientDataPoint[];
   symptoms: PatientDataPoint[];
+  diagnoses?: PatientDataPoint[];
 }
 
 export interface PendingVerificationItem {
