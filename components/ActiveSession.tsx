@@ -77,7 +77,8 @@ export function ActiveSession({ sessionId }: ActiveSessionProps) {
         setViewState('review');
       } catch (error) {
         console.error('[ActiveSession] AI Extraction failed:', error);
-        Alert.alert('AI Error', 'Failed to extract text. The photo will be queued for later.', [
+        const reason = error instanceof Error ? error.message : String(error);
+        Alert.alert('AI Error', `Failed to extract text. The photo will be queued for later.\n\nReason: ${reason}`, [
           { text: 'OK', onPress: async () => {
              // Fallback to offline queue
              await handleOfflineEnqueue(uri);

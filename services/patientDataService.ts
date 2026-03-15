@@ -15,7 +15,7 @@ import { generateLocalInsight, findDrugInteractions, findDrugWarnings } from '@/
 
 // Text-only calls use flash-lite (1,000 RPD free tier)
 // Image scan in geminiService.ts stays on gemini-2.5-flash (20 RPD, needs vision)
-const GEMINI_TEXT_MODEL = 'gemini-3.1-flash-lite-preview';
+const GEMINI_TEXT_MODEL = 'gemini-2.5-flash-lite';
 
 export async function getPatientProblemTree(
   patientCode: string,
@@ -362,8 +362,7 @@ export async function extractStructuredEntities(ordonnance: string) {
     try {
       result = JSON.parse(cleaned)
     } catch (parseErr) {
-      console.error('[NER] JSON parse failed:', parseErr)
-      console.error('[NER] Cleaned text was:', cleaned)
+      console.warn('[NER] JSON parse failed, using safe defaults')
       // Return safe default — do NOT throw here
       return {
         diagnoses: [],
@@ -388,8 +387,7 @@ export async function extractStructuredEntities(ordonnance: string) {
     console.log('[NER] Parsed successfully:', JSON.stringify(result));
     return result;
   } catch(e: any) {
-    console.error('[NER] CRASHED with:', e?.message ?? 'null error object')
-    console.error('[NER] Type of error:', typeof e, JSON.stringify(e))
+    console.warn('[NER] Extraction failed, using safe defaults')
     return { diagnoses: [], drugs: [], symptoms: [], coPrescriptions: [], visitDate: null, specialty: null }
   }
 }
@@ -406,7 +404,7 @@ export async function ingestOrdonnanceIntoGraph(
         .single();
         
      if (recordErr || !record) {
-       console.error('[ingest] Record not found in Supabase:', recordId);
+       console.warn('[ingest] Record not found in Supabase:', recordId);
        return;
      }
      if (record.embedding !== null) {
@@ -415,7 +413,7 @@ export async function ingestOrdonnanceIntoGraph(
      }
 
      if (!localTextPayload || localTextPayload.trim().length < 10) {
-       console.error('[ingest] Empty localTextPayload for record:', recordId);
+       console.warn('[ingest] Empty localTextPayload for record:', recordId);
        return;
      }
 
@@ -482,7 +480,7 @@ export async function ingestOrdonnanceIntoGraph(
        console.log(`[ingestOrdonnanceIntoGraph] Upserted embedding and arrays for record ${recordId}`);
      }
   } catch (err) {
-    console.error('[ingestOrdonnanceIntoGraph] Request failed:', err);
+    console.warn('[ingestOrdonnanceIntoGraph] Request failed:', err);
   }
 }
 

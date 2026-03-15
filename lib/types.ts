@@ -175,3 +175,37 @@ export interface HistoryEntry {
   status: HistoryStatus;
   confidence: number;
 }
+
+// ── AI Chat ──────────────────────────────────────────────────
+
+export interface AIConversation {
+  id: string;
+  clinic_id: string;
+  patient_id: string;
+  doctor_id: string;
+  title: string | null;
+  created_at: string;
+  updated_at: string;
+  last_message_at: string;
+}
+
+export interface AIMessage {
+  id: string;
+  conversation_id: string;
+  role: 'doctor' | 'assistant';
+  content: string;
+  source_record_ids: string[];
+  model: string | null;
+  latency_ms: number | null;
+  created_at: string;
+}
+
+export interface AIChatResponse {
+  conversation_id: string;
+  assistant_message: {
+    id: string;
+    content: string;
+    source_record_ids: string[];
+    created_at: string;
+  };
+}

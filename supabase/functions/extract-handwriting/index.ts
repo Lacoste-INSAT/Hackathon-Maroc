@@ -14,7 +14,7 @@
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
 
 const GEMINI_API_KEY = Deno.env.get('GEMINI_API_KEY') ?? '';
-const GEMINI_MODEL = 'gemini-2.5-flash-preview-05-20';
+const GEMINI_MODEL = 'gemini-2.5-flash';
 const GEMINI_URL = `https://generativelanguage.googleapis.com/v1beta/models/${GEMINI_MODEL}:generateContent?key=${GEMINI_API_KEY}`;
 const TIMEOUT_MS = 20_000;
 const CONFIDENCE_THRESHOLD = 80;
@@ -63,6 +63,20 @@ const corsHeaders = {
   'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
 };
 
+function toStoragePath(imageUrl: string): string {
+  // Preferred format is already a storage path like "doctor/session/record.jpg".
+  if (!imageUrl.startsWith('http://') && !imageUrl.startsWith('https://')) {
+    return imageUrl;
+  }
+
+  // Fallback if a public URL was stored in older rows.
+  // Expected fragment: /storage/v1/object/public/scan-images/<path>
+  const marker = '/storage/v1/object/public/scan-images/';
+  const idx = imageUrl.indexOf(marker);
+  if (idx === -1) return imageUrl;
+  return decodeURIComponent(imageUrl.substring(idx + marker.length));
+}
+
 Deno.serve(async (req: Request) => {
   // ── Handle CORS Preflight ──
   if (req.method === 'OPTIONS') {
@@ -102,7 +116,7 @@ Deno.serve(async (req: Request) => {
     // ── Step 1: Fetch the record to get the storage path ──
     const { data: record, error: recordError } = await supabase
       .from('records')
-      .select('id, session_id, compressed_image_path, status')
+      .select('id, session_id, image_url, status')
       .eq('id', record_id)
       .single();
 
@@ -116,11 +130,11 @@ Deno.serve(async (req: Request) => {
     // ── Step 2: Download compressed image from Storage ──
     // The compressed image was uploaded by the sync service at:
     // scan-images/{doctor_id}/{session_id}/{record_id}.jpg
-    const storagePath = record.compressed_image_path;
+    const storagePath = toStoragePath(record.image_url ?? '');
 
     if (!storagePath) {
       return new Response(
-        JSON.stringify({ error: 'No compressed image path for this record' }),
+        JSON.stringify({ error: 'No image path for this record' }),
         { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
       );
     }

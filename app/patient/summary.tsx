@@ -28,6 +28,7 @@ export default function ClinicalSummaryScreen() {
   const [pendingVerifications, setPendingVerifications] = useState<PendingVerificationItem[]>([]);
   const [narrative, setNarrative] = useState<string | null>(null);
   const [insights, setInsights] = useState<string | null>(null);
+  const [patientId, setPatientId] = useState<string | null>(null);
   const [refreshing, setRefreshing] = useState(false);
   const [refreshingNarrative, setRefreshingNarrative] = useState(false);
   const _insightsRunRef = useRef(false);
@@ -57,6 +58,7 @@ export default function ClinicalSummaryScreen() {
           if (patient) {
             cachedNarrative = patient.clinical_summary;
             currentPatientId = patient.id;
+            setPatientId(patient.id);
           }
         } catch (e) {
           console.error('[ClinicalSummary] Failed to run graph ingestion check:', e);
@@ -252,6 +254,37 @@ export default function ClinicalSummaryScreen() {
     router.push(`/record/${recordId}`);
   };
 
+  const handleOpenAssistant = async () => {
+    if (!(netInfo.isConnected ?? false)) {
+      Alert.alert('Offline', 'AI Assistant requires internet connection.');
+      return;
+    }
+
+    if (patientId) {
+      router.push(`/patient/${patientId}/assistant`);
+      return;
+    }
+
+    try {
+      const { data: patient, error } = await supabase
+        .from('patients')
+        .select('id')
+        .eq('patient_code', patientCode)
+        .single();
+
+      if (error || !patient?.id) {
+        Alert.alert('Unavailable', 'Could not open AI Assistant for this patient yet.');
+        return;
+      }
+
+      setPatientId(patient.id);
+      router.push(`/patient/${patient.id}/assistant`);
+    } catch (e) {
+      console.error('[ClinicalSummary] open assistant error:', e);
+      Alert.alert('Error', 'Failed to open AI Assistant.');
+    }
+  };
+
   if (loading) {
     return (
       <View style={styles.loadingContainer}>
@@ -267,7 +300,17 @@ export default function ClinicalSummaryScreen() {
            <Ionicons name="close" size={24} color={colors.foreground} />
         </Button>
         <Text style={styles.headerTitle}>Clinical Summary</Text>
-        <View style={{ width: 40 }} />
+        <View style={styles.headerAction}>
+          <Button
+            variant="outline"
+            size="sm"
+            onPress={handleOpenAssistant}
+            disabled={!(netInfo.isConnected ?? false)}
+          >
+            <Ionicons name="chatbubble-ellipses-outline" size={14} color={colors.primary} style={{ marginRight: 4 }} />
+            <Text style={{ color: colors.primary, fontWeight: '600' }}>AI</Text>
+          </Button>
+        </View>
       </View>
 
       <View style={{ flex: 1 }}>
@@ -356,9 +399,15 @@ const styles = StyleSheet.create({
     minWidth: 40,
   },
   headerTitle: {
+    flex: 1,
+    textAlign: 'center',
     fontSize: 18,
     fontWeight: 'bold',
     color: colors.foreground,
+  },
+  headerAction: {
+    minWidth: 72,
+    alignItems: 'flex-end',
   },
   scrollContent: {
     paddingTop: spacing.lg,

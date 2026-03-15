@@ -14,6 +14,13 @@ const GEMINI_API_KEY = process.env.EXPO_PUBLIC_GEMINI_API_KEY;
 
 import type { ExtractionResult } from '../lib/types';
 
+const GEMINI_PRIMARY_MODEL = 'gemini-2.5-flash';
+const MAX_RETRIES = 3;
+
+function sleep(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
 /**
  * Extracts handwriting from a local image file directly using the Gemini REST API.
  * 
@@ -67,25 +74,54 @@ export async function extractHandwritingFromBase64(imageUri: string): Promise<Ex
       ]
     };
 
-    // 3. Make the direct REST call
-    const response = await fetch(
-      `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${GEMINI_API_KEY}`,
-      {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify(payload)
-      }
-    );
+    // 3. Make the REST call with retry/backoff for transient throttling.
+    let data: any = null;
+    let lastStatus: number | null = null;
+    let lastBody = '';
 
-    if (!response.ok) {
-      const errorText = await response.text();
-      console.error('[geminiService] Gemini API HTTP error:', response.status, errorText);
-      throw new Error(`[geminiService] Gemini API error (${response.status})`);
+    for (let attempt = 1; attempt <= MAX_RETRIES; attempt++) {
+      const response = await fetch(
+        `https://generativelanguage.googleapis.com/v1beta/models/${GEMINI_PRIMARY_MODEL}:generateContent?key=${GEMINI_API_KEY}`,
+        {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify(payload)
+        }
+      );
+
+      if (response.ok) {
+        data = await response.json();
+        break;
+      }
+
+      lastStatus = response.status;
+      lastBody = await response.text();
+      console.warn(
+        `[geminiService] Gemini HTTP ${response.status} (attempt ${attempt}/${MAX_RETRIES}):`,
+        lastBody
+      );
+
+      const retryable = response.status === 429 || response.status >= 500;
+      if (!retryable || attempt === MAX_RETRIES) {
+        if (response.status === 429) {
+          throw new Error('[geminiService] Gemini quota/rate limit reached (429). Please wait and try again, or use a higher quota API key.');
+        }
+        throw new Error(`[geminiService] Gemini API error (${response.status})`);
+      }
+
+      // Exponential backoff: 1.5s, 3s, 6s
+      await sleep(1500 * Math.pow(2, attempt - 1));
     }
 
-    const data = await response.json();
+    if (!data) {
+      if (lastStatus === 429) {
+        throw new Error('[geminiService] Gemini quota/rate limit reached (429). Please wait and try again, or use a higher quota API key.');
+      }
+      console.error('[geminiService] Final Gemini failure payload:', lastBody);
+      throw new Error('[geminiService] Gemini API returned no data after retries.');
+    }
 
     // 4. Parse the response
     const candidates = data?.candidates;

@@ -21,10 +21,17 @@ export function useNetworkState(): NetworkState {
   });
 
   useEffect(() => {
+    const toOnline = (state: NetInfoState): boolean => {
+      // Some networks report isInternetReachable as null for a short time.
+      // Treat null as reachable if the device is connected, to avoid false offline mode.
+      const reachable = state.isInternetReachable ?? true;
+      return !!(state.isConnected && reachable);
+    };
+
     // Fetch the current state immediately on mount
     NetInfo.fetch().then((state: NetInfoState) => {
       setNetworkState({
-        isOnline: !!(state.isConnected && state.isInternetReachable),
+        isOnline: toOnline(state),
         connectionType: state.type ?? null,
       });
     });
@@ -32,7 +39,7 @@ export function useNetworkState(): NetworkState {
     // Subscribe to real-time changes
     const unsubscribe = NetInfo.addEventListener((state: NetInfoState) => {
       setNetworkState({
-        isOnline: !!(state.isConnected && state.isInternetReachable),
+        isOnline: toOnline(state),
         connectionType: state.type ?? null,
       });
     });

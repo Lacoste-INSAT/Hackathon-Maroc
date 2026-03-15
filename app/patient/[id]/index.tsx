@@ -5,7 +5,7 @@ import { Button } from '@/components/ui/button';
 import { colors, spacing, borderRadius } from '@/lib/theme';
 import { Ionicons } from '@expo/vector-icons';
 
-export default function PatientDetailPlaceholder() {
+export default function PatientDetail() {
   const { id } = useLocalSearchParams<{ id: string }>();
   const router = useRouter();
 
@@ -15,25 +15,26 @@ export default function PatientDetailPlaceholder() {
         <View style={styles.iconCircle}>
           <Ionicons name="folder-open-outline" size={48} color={colors.primary} />
         </View>
-        
+
         <Text style={styles.title}>Patient Profile</Text>
         <Text style={styles.subtitle}>ID: {id}</Text>
-        
+
         <Text style={styles.description}>
-          This is a placeholder for the patient details screen. You can view all records associated with this patient here once the feature is fully implemented.
+          View all records associated with this patient or ask the AI Assistant
+          questions about their medical history.
         </Text>
-        
-        <Button 
-          variant="outline" 
-          onPress={() => router.push(`/patient/summary?patientCode=${id}`)}
-          style={[styles.backButton, { marginBottom: spacing.md }] as any}
+
+        <Button
+          variant="primary"
+          onPress={() => router.push(`/patient/${id}/assistant`)}
+          icon={<Ionicons name="chatbubble-ellipses-outline" size={18} color={colors.primaryForeground} style={{ marginRight: 6 }} />}
+          style={styles.assistantButton}
         >
-          <Ionicons name="list-outline" size={20} color={colors.primary} style={{ marginRight: 8 }} />
-          Clinical Summary
+          AI Assistant
         </Button>
 
-        <Button 
-          variant="primary" 
+        <Button
+          variant="outline"
           onPress={() => router.back()}
           style={styles.backButton}
         >
@@ -86,6 +87,10 @@ const styles = StyleSheet.create({
     textAlign: 'center',
     lineHeight: 22,
     marginBottom: spacing.xl,
+  },
+  assistantButton: {
+    minWidth: 200,
+    marginBottom: spacing.md,
   },
   backButton: {
     minWidth: 160,

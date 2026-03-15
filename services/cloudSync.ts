@@ -18,11 +18,11 @@ import { getInfoAsync, readAsStringAsync } from 'expo-file-system/legacy';
 import { supabase } from '@/lib/supabase';
 import { getDatabase } from './database';
 import { getSessionById } from './sessionRepository';
-import { getRecordById, updateRecordStatus } from './recordRepository';
+import { getRecordById, updateRecordExtraction, updateRecordStatus } from './recordRepository';
 import { updateQueueItemStatus, getQueueItems, retryFailedItem } from './offlineQueue';
 import { getCurrentUser } from './auth';
 import { useSyncStore } from '@/stores/useSyncStore';
-import type { Record as LocalRecord, SyncQueueItem, SyncResult } from '@/lib/types';
+import type { Record as LocalRecord, RecordStatus, SyncQueueItem, SyncResult } from '@/lib/types';
 import 'react-native-get-random-values';
 import { v4 as uuidv4 } from 'uuid';
 
@@ -126,11 +126,33 @@ async function uploadToStorage(record: LocalRecord, userId: string): Promise<str
  * Step D: Get Public URL and upsert Record
  */
 async function upsertRecord(record: LocalRecord, storagePath: string): Promise<string> {
-  const { data: urlData } = supabase.storage
-    .from('scan-images')
-    .getPublicUrl(storagePath);
+  // Keep storage object path in image_url because edge extraction downloads by bucket path.
+  const imageUrl = storagePath;
 
-  const imageUrl = urlData?.publicUrl ?? storagePath;
+  let extractedDataForCloud: unknown = null;
+  let correctionsForCloud: unknown = null;
+
+  if (record.extracted_data) {
+    try {
+      extractedDataForCloud = JSON.parse(record.extracted_data);
+    } catch {
+      extractedDataForCloud = null;
+    }
+  }
+
+  if (record.doctor_corrections) {
+    try {
+      correctionsForCloud = JSON.parse(record.doctor_corrections);
+    } catch {
+      correctionsForCloud = null;
+    }
+  }
+
+  const cloudStatus: RecordStatus = record.overall_confidence !== null
+    ? record.overall_confidence >= 80
+      ? 'approved'
+      : 'needs_review'
+    : 'pending_extraction';
 
   const { error: dbError } = await supabase
     .from('records')
@@ -138,7 +160,10 @@ async function upsertRecord(record: LocalRecord, storagePath: string): Promise<s
       id: record.id,
       session_id: record.session_id,
       image_url: imageUrl,
-      status: 'pending_extraction',
+      extracted_data: extractedDataForCloud,
+      overall_confidence: record.overall_confidence,
+      doctor_corrections: correctionsForCloud,
+      status: cloudStatus,
       synced_at: new Date().toISOString(),
       created_at: record.created_at,
     });
@@ -197,28 +222,52 @@ async function processItem(item: SyncQueueItem, db: any): Promise<void> {
   // Step C: Upload Image to Storage
   const storagePath = await uploadToStorage(record, userId);
 
+  // Step D: Upsert cloud record before any server-side extraction.
+  await upsertRecord(record, storagePath);
+
   // Step C.5: AI Extraction (if missing, means we captured offline)
   let finalConfidence = record.overall_confidence ?? 0;
+  let finalStatus: RecordStatus = finalConfidence >= 80 ? 'approved' : 'needs_review';
+
   if (!record.extracted_data) {
-    console.log('[EXTRACTION] Starting for record:', record.id);
-    console.log('[EXTRACTION] Image URL:', record.compressed_image_path ?? record.original_image_path);
-    try {
-      const localImagePath = record.compressed_image_path ?? record.original_image_path;
-      const { extractHandwritingFromBase64 } = require('@/services/geminiService');
-      const extraction = await extractHandwritingFromBase64(localImagePath);
-      const { updateRecordExtraction } = require('@/services/recordRepository');
-      await updateRecordExtraction(record.id, JSON.stringify(extraction), extraction.overallConfidence);
-      finalConfidence = extraction.overallConfidence;
-      console.log('[EXTRACTION] Wrote extracted_data, new status: approved');
-    } catch (e) {
-      console.warn('[cloudSync] Background extraction failed:', e);
-      // It will just be approved with no extraction data, meaning 0% confidence -> queue-reviewed
+    console.log('[EXTRACTION] Triggering server extraction for record:', record.id);
+
+    const { error: extractInvokeError } = await supabase.functions.invoke('extract-handwriting', {
+      body: { record_id: record.id },
+    });
+
+    if (extractInvokeError) {
+      throw new Error(`[cloudSync] Step C.5 Failed: Edge extraction invoke failed: ${extractInvokeError.message}`);
+    }
+
+    const { data: cloudRecord, error: cloudRecordErr } = await supabase
+      .from('records')
+      .select('extracted_data, overall_confidence, flagged_reason, status')
+      .eq('id', record.id)
+      .single();
+
+    if (cloudRecordErr || !cloudRecord) {
+      throw new Error(`[cloudSync] Step C.5 Failed: Could not fetch extraction result: ${cloudRecordErr?.message ?? 'unknown error'}`);
+    }
+
+    if (cloudRecord.extracted_data && typeof cloudRecord.overall_confidence === 'number') {
+      await updateRecordExtraction(
+        record.id,
+        cloudRecord.extracted_data,
+        cloudRecord.overall_confidence,
+        cloudRecord.flagged_reason ?? null
+      );
+      finalConfidence = cloudRecord.overall_confidence;
+      finalStatus = finalConfidence >= 80 ? 'approved' : 'needs_review';
+      console.log(`[EXTRACTION] Server extraction saved locally (${finalConfidence}%)`);
+    } else {
+      finalStatus = cloudRecord.status === 'approved' ? 'approved' : 'needs_review';
+      finalConfidence = 0;
+      console.warn('[cloudSync] Edge extraction finished without extracted_data payload; keeping needs_review status locally.');
     }
   }
 
-  // Step D: Get Public URL and upsert Record
-  await upsertRecord(record, storagePath);
-  await updateRecordStatus(record.id, 'approved', new Date().toISOString());
+  await updateRecordStatus(record.id, finalStatus, new Date().toISOString());
 }
 
 
