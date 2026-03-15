@@ -25,8 +25,14 @@ import { useSyncStore } from '@/stores/useSyncStore';
 import type { Record as LocalRecord, SyncQueueItem, SyncResult } from '@/lib/types';
 import 'react-native-get-random-values';
 import { v4 as uuidv4 } from 'uuid';
+import { GeminiRateLimitError } from './geminiService';
 
 const MAX_RETRIES = 5;
+
+function nextBackoffSeconds(retryCount: number, apiHintSeconds: number): number {
+  const exponential = 15 * Math.pow(2, Math.max(0, retryCount - 1)); // 15, 30, 60, 120, 240...
+  return Math.max(apiHintSeconds, exponential);
+}
 
 /**
  * Step A: Ensure patient exists on Supabase.
@@ -211,6 +217,10 @@ async function processItem(item: SyncQueueItem, db: any): Promise<void> {
       finalConfidence = extraction.overallConfidence;
       console.log('[EXTRACTION] Wrote extracted_data, new status: approved');
     } catch (e) {
+      if (e instanceof GeminiRateLimitError) {
+        // Bubble up so queue can back off instead of forcing queue-review behavior.
+        throw e;
+      }
       console.warn('[cloudSync] Background extraction failed:', e);
       // It will just be approved with no extraction data, meaning 0% confidence -> queue-reviewed
     }
@@ -260,14 +270,24 @@ export async function syncAllPending(): Promise<SyncResult> {
         const newRetryCount = item.retry_count + 1;
         const errorMsg = error instanceof Error ? error.message : String(error);
 
+        if (error instanceof GeminiRateLimitError) {
+          const delaySeconds = nextBackoffSeconds(newRetryCount, error.retryAfterSeconds);
+          const nextRetryAt = new Date(Date.now() + delaySeconds * 1000).toISOString();
+          await updateQueueItemStatus(item.id, 'pending', newRetryCount, nextRetryAt);
+          console.warn(
+            `[cloudSync] Item ${item.id} rate-limited. Holding until ${nextRetryAt} (retry in ${delaySeconds}s)`
+          );
+          continue;
+        }
+
         console.error(`[cloudSync] Failed item ${item.id} (attempt ${newRetryCount}/${MAX_RETRIES}):`, errorMsg);
 
         if (newRetryCount >= MAX_RETRIES) {
-           await updateQueueItemStatus(item.id, 'failed', newRetryCount);
+           await updateQueueItemStatus(item.id, 'failed', newRetryCount, null);
            failed++;
            console.error(`[cloudSync] Item ${item.id} permanently failed.`);
         } else {
-           await updateQueueItemStatus(item.id, 'pending', newRetryCount);
+           await updateQueueItemStatus(item.id, 'pending', newRetryCount, null);
         }
       }
     }

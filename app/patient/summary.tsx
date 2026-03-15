@@ -1,6 +1,7 @@
 import React, { useEffect, useState, useRef } from 'react';
 import { View, Text, StyleSheet, ActivityIndicator, Alert } from 'react-native';
 import { useLocalSearchParams, useRouter } from 'expo-router';
+import { useFocusEffect } from 'expo-router';
 import { colors, spacing, borderRadius } from '@/lib/theme';
 import { Ionicons } from '@expo/vector-icons';
 import { getPatientProblemTree, getClinicalNarrative, getClinicalInsights, ingestOrdonnanceIntoGraph } from '@/services/patientDataService';
@@ -11,6 +12,7 @@ import { getDatabase } from '@/services/database';
 import { ProblemNode, PendingVerificationItem, ExtractionResult } from '@/lib/types';
 import { AIVerificationInbox } from '@/components/patient/AIVerificationInbox';
 import { AccordionItem } from '@/components/patient/ClinicalSummaryAccordion';
+import KnowledgeGraphLoader from '@/components/ui/KnowledgeGraphLoader';
 import { ClinicalInsights } from '@/components/patient/ClinicalInsights';
 import { useNetInfo } from '@react-native-community/netinfo';
 import { Button } from '@/components/ui/button';
@@ -24,23 +26,28 @@ export default function ClinicalSummaryScreen() {
   const netInfo = useNetInfo();
   
   const [loading, setLoading] = useState(true);
+  const [loadingInsights, setLoadingInsights] = useState(true);
   const [problemTree, setProblemTree] = useState<ProblemNode[]>([]);
   const [pendingVerifications, setPendingVerifications] = useState<PendingVerificationItem[]>([]);
   const [narrative, setNarrative] = useState<string | null>(null);
-  const [insights, setInsights] = useState<string | null>(null);
+  const [insights, setInsights] = useState<any | null>(null);
   const [refreshing, setRefreshing] = useState(false);
   const [refreshingNarrative, setRefreshingNarrative] = useState(false);
+  const [refreshingInsights, setRefreshingInsights] = useState(false);
   const _insightsRunRef = useRef(false);
 
-  const loadData = async () => {
+  const loadData = async (skipAI = false) => {
     if (!patientCode) return;
     try {
       const isOnline = netInfo.isConnected ?? false;
       const data = await getPatientProblemTree(patientCode, isOnline);
       setProblemTree(data.problemTree);
       setPendingVerifications(data.pendingVerifications);
+      
+      // Stop the main loading spinner immediately so the user can see their clinical data
+      setLoading(false);
 
-      if (isOnline) {
+      if (isOnline && !skipAI) {
         const { data: colCheck, error: colErr } = await supabase
           .from('records')
           .select('id, embedding, diagnoses, drugs, symptoms')
@@ -140,24 +147,39 @@ export default function ClinicalSummaryScreen() {
         console.log('[SUMMARY] Now fetching insights...');
         if (!_insightsRunRef.current) {
           _insightsRunRef.current = true;
+          setLoadingInsights(true);
           const insightData = await getClinicalInsights(patientCode, data.problemTree);
           setInsights(insightData);
+          setLoadingInsights(false);
         } else {
           console.log('[SUMMARY] Insights already fetched, skipping duplicate call');
+          setLoadingInsights(false);
         }
+      } else {
+        setLoadingInsights(false); // If offline or skipping AI
       }
     } catch (error) {
       console.error('[ClinicalSummary] Failed to load data:', error);
       Alert.alert('Error', 'Failed to load clinical summary.');
+      setLoadingInsights(false);
     } finally {
       setLoading(false);
       setRefreshing(false);
+      setLoadingInsights(false);
     }
   };
 
-  useEffect(() => {
-    loadData();
-  }, [patientCode]);
+  useFocusEffect(
+    React.useCallback(() => {
+      let isActive = true;
+      if (isActive) {
+        loadData();
+      }
+      return () => {
+        isActive = false;
+      };
+    }, [patientCode, netInfo.isConnected])
+  );
 
   const handleRefresh = async (forceNarrativeRefresh = false) => {
     if (forceNarrativeRefresh && netInfo.isConnected) {
@@ -176,18 +198,36 @@ export default function ClinicalSummaryScreen() {
         const narrativeText = await getClinicalNarrative(patientCode as string, problemTree, true);
         setNarrative(narrativeText);
         
-        const insightData = await getClinicalInsights(patientCode as string, problemTree);
+        const insightData = await getClinicalInsights(patientCode as string, problemTree, true);
         setInsights(insightData);
       } catch (error) {
-        console.error('Failed to force refresh narrative:', error);
+        console.error('Failed to force refresh narrative/insights:', error);
       } finally {
         setRefreshingNarrative(false);
       }
     } else {
       setRefreshing(true);
-      _insightsRunRef.current = false; // allow refresh to re-run
-      await loadData();
+      await loadData(true); // pass true to skip re-running AI/insights checks when just pulling to refresh records
       setRefreshing(false);
+    }
+  };
+
+  const handleRefreshInsights = async () => {
+    if (!netInfo.isConnected) {
+      Alert.alert('Offline', 'Cannot refresh insights while offline.');
+      return;
+    }
+    
+    setRefreshingInsights(true);
+    setLoadingInsights(true);
+    try {
+      const insightData = await getClinicalInsights(patientCode as string, problemTree, true);
+      setInsights(insightData);
+    } catch (error) {
+      console.error('Failed to refresh insights:', error);
+    } finally {
+      setRefreshingInsights(false);
+      setLoadingInsights(false);
     }
   };
 
@@ -297,8 +337,13 @@ export default function ClinicalSummaryScreen() {
                 </View>
               ) : null}
 
-              {insights && insights.length > 0 ? (
-                <ClinicalInsights insight={insights} />
+              {insights || loadingInsights ? (
+                <ClinicalInsights 
+                  insight={insights} 
+                  onRefresh={handleRefreshInsights}
+                  isRefreshing={refreshingInsights}
+                  isLoading={loadingInsights}
+                />
               ) : null}
               <AIVerificationInbox 
                 items={pendingVerifications} 

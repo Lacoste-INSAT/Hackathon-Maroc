@@ -85,6 +85,7 @@ export async function initDatabase(): Promise<void> {
       action      TEXT NOT NULL,
       retry_count INTEGER DEFAULT 0,
       last_attempt TEXT,
+      next_retry_at TEXT,
       status      TEXT DEFAULT 'pending'
                   CHECK (status IN (
                     'pending',
@@ -95,6 +96,13 @@ export async function initDatabase(): Promise<void> {
       FOREIGN KEY (record_id) REFERENCES records(id)
     );
   `);
+
+  // Backward-compatible migration for existing installs.
+  try {
+    await _db.execAsync(`ALTER TABLE sync_queue ADD COLUMN next_retry_at TEXT;`);
+  } catch {
+    // Column already exists.
+  }
 
   // ── Patients ────────────────────────────────────────────
   await _db.execAsync(`

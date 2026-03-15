@@ -15,9 +15,7 @@ ALTER TABLE records ADD COLUMN IF NOT EXISTS symptoms    TEXT[] DEFAULT '{}';
 --    and join back to patients for cross-patient matching
 CREATE OR REPLACE FUNCTION match_clinical_records(
   query_embedding vector(768),
-  match_threshold float DEFAULT 0.72,
-  match_count     int   DEFAULT 3,
-  patient_filter  uuid  DEFAULT null  -- null = search ALL patients (Knowledge Graph mode)
+  match_count     int   DEFAULT 3
 )
 RETURNS TABLE (
   id               uuid,
@@ -42,10 +40,6 @@ LANGUAGE sql STABLE AS $$
   FROM records r
   JOIN sessions s ON s.id = r.session_id
   WHERE r.embedding IS NOT NULL
-    AND r.status = 'approved'
-    AND (patient_filter IS NULL OR s.patient_id != patient_filter)
-    -- ↑ exclude the CURRENT patient's own records from matches
-    AND 1 - (r.embedding <=> query_embedding) > match_threshold
   ORDER BY r.embedding <=> query_embedding
   LIMIT match_count;
 $$;

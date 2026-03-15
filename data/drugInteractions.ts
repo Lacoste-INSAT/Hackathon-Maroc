@@ -128,6 +128,11 @@ export const DRUG_WARNINGS: DrugWarning[] = [
     monitoring: 'Liver function tests if chronic use or >3g/day.'
   },
   {
+    drug: 'acetaminophen',
+    warning: 'Hepatotoxicity risk above 4g/day. Leading cause of acute liver failure.',
+    monitoring: 'Liver function tests if chronic use or >3g/day.'
+  },
+  {
     drug: 'tramadol',
     warning: 'Seizure risk, serotonin syndrome potential, dependency risk.',
     monitoring: 'Limit to shortest duration. Monitor CNS effects.'

@@ -11,11 +11,139 @@ import type {
 import 'react-native-get-random-values';
 import { v4 as uuidv4 } from 'uuid';
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import { generateLocalInsight, findDrugInteractions, findDrugWarnings } from '@/data/drugInteractions';
+import { findDrugInteractions, findDrugWarnings } from '@/data/drugInteractions';
 
 // Text-only calls use flash-lite (1,000 RPD free tier)
 // Image scan in geminiService.ts stays on gemini-2.5-flash (20 RPD, needs vision)
 const GEMINI_TEXT_MODEL = 'gemini-3.1-flash-lite-preview';
+
+type FdaSnapshotItem = {
+  warning: string;
+  interaction: string;
+};
+
+const FDA_LOCAL_SNAPSHOT: { [key: string]: FdaSnapshotItem } = {
+  acetaminophen: {
+    warning: 'Liver warning: contains acetaminophen. Severe liver damage if >4000mg/24h.',
+    interaction: ''
+  },
+  aspirin: {
+    warning: "Reye's syndrome risk in children recovering from viral illness.",
+    interaction: ''
+  },
+  ramipril: {
+    warning: 'ACE inhibitor - angioedema risk.',
+    interaction: 'Diuretics: excessive hypotension risk. Lithium: use with caution.'
+  },
+  tramadol: {
+    warning: 'Opioid - hyperalgesia and allodynia risk.',
+    interaction: 'See full prescribing info for CYP interactions.'
+  },
+  allopurinol: {
+    warning: 'Serious skin reactions including SJS possible.',
+    interaction: 'Increased skin reaction risk with bendamustine and similar agents.'
+  },
+  prednisone: {
+    warning: 'Corticosteroid - increased dosage needed under unusual stress.',
+    interaction: ''
+  },
+  metformin: {
+    warning: 'Lactic acidosis risk - see boxed warning.',
+    interaction: 'See full prescribing info for ZITUVIMET interactions.'
+  },
+  ibuprofen: {
+    warning: 'Severe allergic reaction possible, especially aspirin-sensitive patients.',
+    interaction: ''
+  },
+  atorvastatin: {
+    warning: 'Myopathy and rhabdomyolysis risk, especially age 65+.',
+    interaction: 'See full prescribing info for concomitant use restrictions.'
+  },
+  amlodipine: {
+    warning: 'Symptomatic hypotension possible in severe aortic stenosis.',
+    interaction: 'Do not exceed simvastatin 20mg daily when co-prescribed.'
+  },
+  furosemide: {
+    warning: 'Potent diuretic - excessive amounts cause profound diuresis.',
+    interaction: 'Increases ototoxic potential of aminoglycoside antibiotics.'
+  },
+  omeprazole: {
+    warning: 'Severe skin reactions possible. Do not use if allergic.',
+    interaction: ''
+  },
+  paracetamol: {
+    warning: 'Liver warning: contains acetaminophen. Severe liver damage if >4000mg/24h.',
+    interaction: ''
+  }
+};
+
+const INN_TO_FDA: { [key: string]: string } = {
+  'paracetamol': 'acetaminophen',
+  'paracetamolum': 'acetaminophen',
+  'doliprane': 'acetaminophen',
+  'efferalgan': 'acetaminophen',
+  'dafalgan': 'acetaminophen',
+  'acetaminophen': 'acetaminophen',
+  'aspirin': 'aspirin',
+  'aspirine': 'aspirin',
+  'acide acetylsalicylique': 'aspirin',
+  'acide acetylsalicylique de lysine': 'aspirin',
+  'kardegic': 'aspirin',
+  'ramipril': 'ramipril',
+  'tramadol': 'tramadol',
+  'tramadol chlorhydrate': 'tramadol',
+  'allopurinol': 'allopurinol',
+  'prednisone': 'prednisone',
+  'metformin': 'metformin',
+  'metformine': 'metformin',
+  'ibuprofen': 'ibuprofen',
+  'ibuprofene': 'ibuprofen',
+  'atorvastatin': 'atorvastatin',
+  'atorvastatine': 'atorvastatin',
+  'amlodipine': 'amlodipine',
+  'furosemide': 'furosemide',
+  'omeprazole': 'omeprazole',
+  'omeprazol': 'omeprazole',
+  'pravastatine': 'pravastatin',
+  'pravastatine sodique': 'pravastatin',
+  'pravastatin': 'pravastatin',
+};
+
+const SKIP_DRUG_PATTERNS = ['medicament', 'médicament', 'drug ', 'medicine', 'unknown', 'immosal', 'perocet'];
+
+function normalizeDrugName(input: string): string {
+  const ascii = input
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .toLowerCase()
+    .trim();
+
+  const cleaned = ascii
+    .replace(/^\d+[.)]\s*/, '')
+    .replace(/\(.*?\)/g, ' ')
+    .replace(/\b(cp|cpr|comprime|comprimes|gel|gelule|gelules|mg|ml|g|ui|sachet|ampoule|inj)\b/g, ' ')
+    .replace(/\s*(sodique|chlorhydrate|sel de lysine|calcique|potassique)$/i, '')
+    .replace(/\s+/g, ' ')
+    .trim();
+
+  return INN_TO_FDA[cleaned] ?? cleaned;
+}
+
+function isRealDrugName(name: string): boolean {
+  const lower = name.toLowerCase();
+  if (name.length < 3) return false;
+  return !SKIP_DRUG_PATTERNS.some((p) => lower.includes(p));
+}
+
+function compactClinicalText(value: string, max = 95): string {
+  if (!value) return '';
+  const normalized = value
+    .replace(/\s+/g, ' ')
+    .replace(/\s*\[[^\]]*\]/g, '')
+    .trim();
+  const sentence = normalized.split(/(?<=[.!?])\s+/)[0]?.trim() ?? normalized;
+  return sentence.slice(0, max).trim();
+}
 
 export async function getPatientProblemTree(
   patientCode: string,
@@ -61,24 +189,23 @@ export async function getClinicalNarrative(patientCode: string, localClinicalDat
       .from('patients')
       .select('*')
       .eq('patient_code', patientCode)
-      .single();
+      .maybeSingle();
 
-    if (patientError || !patient) {
-      console.log('[getClinicalNarrative] Patient not found or error:', patientError);
-      return `ERROR: Patient query failed - ${patientError?.message || 'Not found'}`;
+    if (patientError) {
+      console.log('[getClinicalNarrative] Patient error:', patientError);
     }
 
-    if (!forceRefresh && patient.clinical_summary) {
+    if (!forceRefresh && patient?.clinical_summary) {
       console.log('[getClinicalNarrative] Using cached clinical_summary');
       return patient.clinical_summary;
     }
 
     // Calculate age with robust fallbacks
     let computedAge = '';
-    let biologicalSex = patient.gender || patient.biological_sex || '';
-    let weight = patient.weight_kg ? `${patient.weight_kg}kg` : '';
+    let biologicalSex = patient?.gender || patient?.biological_sex || '';
+    let weight = patient?.weight_kg ? `${patient.weight_kg}kg` : '';
 
-    if (patient.date_of_birth) {
+    if (patient?.date_of_birth) {
       try {
         const dob = new Date(patient.date_of_birth);
         if (!isNaN(dob.getTime())) {
@@ -219,7 +346,7 @@ Patient Demographics: ${demographicString.length > 0 ? demographicString : 'Not 
     };
 
     const controller = new AbortController();
-    const timeoutId = setTimeout(() => controller.abort(), 15000);
+    const timeoutId = setTimeout(() => controller.abort(), 60000);
 
     const geminiResponse = await fetch(GEMINI_URL, {
       method: 'POST',
@@ -401,7 +528,7 @@ export async function ingestOrdonnanceIntoGraph(
   try {
      const { data: record, error: recordErr } = await supabase
         .from('records')
-        .select('id, embedding')
+        .select('id, embedding, diagnoses, drugs, symptoms, extracted_data')
         .eq('id', recordId)
         .single();
         
@@ -420,7 +547,61 @@ export async function ingestOrdonnanceIntoGraph(
      }
 
      console.log('[ingest] Text payload length:', localTextPayload.length);
-     const structured = await extractStructuredEntities(localTextPayload);
+     let structured: any = null;
+
+     const hasExistingStructured =
+       Array.isArray((record as any).diagnoses) && (record as any).diagnoses.length > 0 &&
+       Array.isArray((record as any).drugs) && (record as any).drugs.length > 0;
+
+     if (hasExistingStructured) {
+       structured = {
+         diagnoses: (record as any).diagnoses ?? [],
+         drugs: ((record as any).drugs ?? []).map((name: string) => ({ name })),
+         symptoms: (record as any).symptoms ?? [],
+         coPrescriptions: [],
+         visitDate: null,
+         specialty: null,
+       };
+       console.log('[ingest] Reusing existing diagnoses/drugs/symptoms, skipping NER');
+     } else {
+       // If payload already looks like extracted_data JSON, parse it locally before calling Gemini NER.
+       try {
+         const parsed = JSON.parse(localTextPayload);
+         if (parsed?.fields && Array.isArray(parsed.fields)) {
+           const diagnoses = parsed.fields
+             .filter((f: any) => /diagnosis/i.test(String(f?.label ?? '')))
+             .map((f: any) => String(f?.value ?? '').trim())
+             .filter(Boolean);
+           const drugs = parsed.fields
+             .filter((f: any) => /medication/i.test(String(f?.label ?? '')))
+             .map((f: any) => ({ name: String(f?.value ?? '').trim() }))
+             .filter((d: any) => d.name.length > 0);
+           const symptoms = parsed.fields
+             .filter((f: any) => /symptom|note/i.test(String(f?.label ?? '')))
+             .map((f: any) => String(f?.value ?? '').trim())
+             .filter(Boolean);
+
+           if (diagnoses.length || drugs.length || symptoms.length) {
+             structured = {
+               diagnoses,
+               drugs,
+               symptoms,
+               coPrescriptions: [],
+               visitDate: null,
+               specialty: null,
+             };
+             console.log('[ingest] Parsed extracted_data payload locally, skipping NER');
+           }
+         }
+       } catch {
+         // Not JSON payload; fall through to NER.
+       }
+     }
+
+     if (!structured) {
+       structured = await extractStructuredEntities(localTextPayload);
+     }
+
      const structuredString = JSON.stringify(structured);
 
      const GEMINI_API_KEY = process.env.EXPO_PUBLIC_GEMINI_API_KEY;
@@ -450,7 +631,9 @@ export async function ingestOrdonnanceIntoGraph(
      
      console.log('[EMBED] Vector dimensions:', vector.length);
 
-     const drugsArray = structured.drugs ? structured.drugs.map((d: any) => d.name) : [];
+     const drugsArray = Array.isArray(structured.drugs)
+       ? structured.drugs.map((d: any) => (typeof d === 'string' ? d : d?.name)).filter(Boolean)
+       : [];
 
      const { data: updateResult, error: updateErr, count } = 
        await supabase
@@ -490,72 +673,33 @@ export async function getDrugSafetyData(drugNames: string[]): Promise<string> {
   if (!drugNames || drugNames.length === 0) return '';
   
   try {
-    // Use only the first 3 drugs to avoid rate limits
-    const drugsToCheck = drugNames.slice(0, 3);
+    // Use only the first 2 drugs to minimize external calls.
+    const drugsToCheck = drugNames.slice(0, 2);
+
     const results: string[] = [];
-    
-    // 1. INN → FDA name mapping for common European/French drugs
-    const INN_TO_FDA: { [key: string]: string } = {
-      'paracetamol': 'acetaminophen',
-      'paracétamol': 'acetaminophen',
-      'ibuprofen': 'ibuprofen',
-      'ibuprofène': 'ibuprofen',
-      'amoxicillin': 'amoxicillin',
-      'amoxicilline': 'amoxicillin',
-      'tramadol': 'tramadol',
-      'tramadol chlorhydrate': 'tramadol',
-      'metformin': 'metformin',
-      'metformine': 'metformin',
-      'amlodipine': 'amlodipine',
-      'atorvastatin': 'atorvastatin',
-      'atorvastatine': 'atorvastatin',
-      'omeprazole': 'omeprazole',
-      'oméprazole': 'omeprazole',
-      'salbutamol': 'albuterol',
-      'frusemide': 'furosemide',
-      'furosemide': 'furosemide',
-      'furosémide': 'furosemide',
-      'pravastatine sodique': 'pravastatin',
-      'pravastatine': 'pravastatin',
-      'pravastatin': 'pravastatin',
-      'acide acetylsalicylique': 'aspirin',
-      'acide acétylsalicylique': 'aspirin',
-      'aspirine': 'aspirin',
-      'ramipril': 'ramipril',
-      'allopurinol': 'allopurinol',
-      'prednisone': 'prednisone',
-      'prednisolone': 'prednisolone',
-      'vogalene': 'metopimazine',
-      'spasfon': 'phloroglucinol',
-      'doliprane': 'acetaminophen',
-      'efferalgan': 'acetaminophen',
-      'dafalgan': 'acetaminophen',
-      'kardegic': 'aspirin',
-    };
-    
-    // 2. Filter out placeholder/unknown drug names
-    const SKIP_PATTERNS = ['médicament', 'medicament', 'drug ', 'medicine', 'unknown', 'immosal', 'perocet'];
-    
-    for (const drug of drugsToCheck) {
-      if (!drug) continue;
-      const innName = drug.toLowerCase().trim();
-      
-      // Skip placeholder names
-      if (SKIP_PATTERNS.some(p => innName.includes(p))) {
-        console.log('[FDA] Skipping placeholder drug name:', drug);
-        continue;
+
+    for (const rawDrug of drugsToCheck) {
+      if (!rawDrug) continue;
+
+      const innName = normalizeDrugName(rawDrug);
+      if (!isRealDrugName(innName)) continue;
+
+      const fdaName = INN_TO_FDA[innName] ?? innName;
+
+      // Check local snapshot first - no API call needed.
+      const localData = FDA_LOCAL_SNAPSHOT[fdaName] ?? FDA_LOCAL_SNAPSHOT[innName];
+      if (localData) {
+        const summary = [localData.warning, localData.interaction]
+          .filter((s) => s && s.length > 5)
+          .join(' | ')
+          .substring(0, 200);
+
+        if (summary.length > 10) {
+          results.push(`${fdaName}: ${summary}`);
+          continue; // Skip live API call entirely for known drugs.
+        }
       }
-      
-      // Try exact match first, then try stripping French suffixes
-      let fdaName = INN_TO_FDA[innName];
-      if (!fdaName) {
-        // Try without common suffixes like "sodique", "chlorhydrate"
-        const stripped = innName
-          .replace(/\s*(sodique|chlorhydrate|sel de lysine|calcique|potassique)$/i, '')
-          .trim();
-        fdaName = INN_TO_FDA[stripped] ?? stripped;
-      }
-      
+
       const cacheKey = `fda_safety_${fdaName}`;
       
       // Check 24h AsyncStorage cache first
@@ -568,12 +712,13 @@ export async function getDrugSafetyData(drugNames: string[]): Promise<string> {
         }
       }
       
+      // Only hit live FDA for uncommon drugs not covered by local snapshot.
       const url = `https://api.fda.gov/drug/label.json?search=openfda.substance_name:"${encodeURIComponent(fdaName.toUpperCase())}"&limit=1`;
-      console.log('[FDA] Searching for:', fdaName, '→ URL:', url);
+      console.log('[FDA] Searching for:', fdaName, '-> URL:', url);
       const res = await fetch(url);
       
       if (!res.ok) {
-        console.warn(`[FDA] ${drug} returned ${res.status}`);
+        console.warn(`[FDA] ${fdaName} returned ${res.status}`);
         continue;
       }
       
@@ -582,24 +727,14 @@ export async function getDrugSafetyData(drugNames: string[]): Promise<string> {
       
       if (!result) continue;
       
-      // Extract ONLY drug interactions (most actionable for doctors)
-      // Fall back to key warning if no interactions section exists
       const interactions = result.drug_interactions?.[0] || '';
       const keyWarning = result.warnings_and_cautions?.[0] || 
                          result.warnings?.[0] || '';
       
-      // Use interactions if available, otherwise extract first sentence of warnings
-      let summary = '';
-      if (interactions.length > 10) {
-        summary = interactions.substring(0, 120).trim();
-      } else if (keyWarning.length > 10) {
-        // Just the first sentence of the warning
-        const firstSentence = keyWarning.split('.')[0];
-        summary = firstSentence.substring(0, 120).trim();
-      }
+      const summary = compactClinicalText(interactions || keyWarning, 95);
       
       if (summary.length > 20) {
-        const entry = `${drug}: ${summary}`;
+        const entry = `${fdaName}: ${summary}`;
         results.push(entry);
         await AsyncStorage.setItem(cacheKey, JSON.stringify({
           data: entry,
@@ -616,109 +751,185 @@ export async function getDrugSafetyData(drugNames: string[]): Promise<string> {
   }
 }
 
-export async function getClinicalInsights(patientCode: string, localClinicalData: any = null): Promise<string> {
-  console.log('[KG INPUT] problemTree:', 
-    JSON.stringify(localClinicalData?.length), 
-    'medications sample:', 
-    JSON.stringify(localClinicalData?.[0]?.medications?.[0]?.value)
-  );
+export async function getClinicalInsights(patientCode: string, localClinicalData: any = null, forceRefresh: boolean = false): Promise<{ insightText: string, matches: any[] } | null> {
+  console.log('[KG INPUT] Fetching insights for patient:', patientCode);
+
+  const CACHE_KEY = `clinical_insights_${patientCode}`;
+  if (!forceRefresh) {
+    const cached = await AsyncStorage.getItem(CACHE_KEY);
+    if (cached) {
+      console.log('[KG] Using cached clinical insights for', patientCode);
+      try {
+        return JSON.parse(cached);
+      } catch (e) {
+        console.warn('[KG] Failed to parse cached insights', e);
+      }
+    }
+  }
+
+  const GEMINI_API_KEY = process.env.EXPO_PUBLIC_GEMINI_API_KEY;
+  if (!GEMINI_API_KEY) return null;
 
   try {
-    // Step 1: Extract all drug names from localClinicalData
-    const allDrugNames: string[] = [];
-    if (localClinicalData && Array.isArray(localClinicalData)) {
-      for (const visit of localClinicalData) {
-        if (visit.medications && Array.isArray(visit.medications)) {
-          for (const med of visit.medications) {
-            const name = (med.value ?? med)?.toString().split('\n')[0]?.trim();
-            if (name && name.length > 2) {
-              // Extract just the drug name (before dosage)
-              const drugOnly = name
-                .replace(/^\d+[\.\)]\s*/, '')
-                .split(/\s+\d/)[0] // cut before first number (dosage)
-                .trim();
-              if (drugOnly.length > 2) allDrugNames.push(drugOnly);
-            }
-          }
-        }
+    let currentVector: number[] | string | null = null;
+    let patientId: string | null = null;
+    let currentRecordId: string | null = null;
+
+    // 1. Get current embedding and patient ID from Supabase
+    const { data: patient, error: patientErr } = await supabase.from('patients').select('id').eq('patient_code', patientCode).maybeSingle();
+
+    if (patient) {
+      patientId = patient.id;
+      const { data: records } = await supabase
+        .from('records')
+        .select('id, embedding, sessions!inner(patient_id)')
+        .eq('sessions.patient_id', patient.id)
+        .not('embedding', 'is', null)
+        .order('created_at', { ascending: false })
+        .limit(1);
+      
+      if (records && records.length > 0) {
+        currentRecordId = (records[0] as any).id;
+        currentVector = (records[0] as any).embedding;
       }
     }
+
+    // 2. Generate embedding dynamically if not found but data exists
+    if (!currentVector && localClinicalData) {
+      console.log('[KG] Vector not found in DB, generating on the fly before RPC...');
+      const embedUrl = `https://generativelanguage.googleapis.com/v1beta/models/gemini-embedding-001:embedContent?key=${GEMINI_API_KEY}`;
+      const embedRes = await fetch(embedUrl, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          model: 'models/gemini-embedding-001',
+          content: { parts: [{ text: JSON.stringify(localClinicalData) }] },
+          output_dimensionality: 768
+        })
+      });
+      const embedRaw = await embedRes.json();
+      currentVector = embedRaw?.embedding?.values;
+    }
+
+    if (!currentVector) {
+      console.log('[KG] No vector available for search even after retry.');
+      return null;
+    }
+
+    // Convert vector array to string if needed by Supabase pgvector
+    const vectorString = Array.isArray(currentVector) ? `[${currentVector.join(',')}]` : currentVector;
+
+    // 3. Call the Supabase RPC to find historical matches
+    console.log('[KG] Searching for historical matches (excluding current record)...');
+    const { data: rawMatches, error } = await supabase.rpc('match_clinical_records', { 
+      query_embedding: vectorString, 
+      match_count: 3,
+      exclude_id: currentRecordId
+    });
+
+    if (error) {
+      console.error('[KG] match_clinical_records RPC error:', error);
+      return null;
+    }
+
+    if (!rawMatches || rawMatches.length === 0) {
+      console.log('[KG] Database is completely empty or no valid matches found.');
+      return null;
+    }
+
+    console.log(`\n--- [KG] Found ${rawMatches.length} Matches ---`);
+    const formattedMatches = rawMatches.map((m: any, index: number) => {
+      const summary = `Drugs: [${(m.drugs || []).join(', ')}] | Dx: [${(m.diagnoses || []).join(', ')}]`;
+      console.log(`Match ${index + 1}: Score ${m.similarity.toFixed(4)} - ${summary}`);
+      return {
+        id: m.id,
+        similarity: m.similarity,
+        dataSummary: summary
+      };
+    });
+    console.log('-------------------------------------\n');
+
+    const matchesString = JSON.stringify(rawMatches);
+    const localDataString = JSON.stringify(localClinicalData);
     
-    console.log('[KG] Extracted drug names:', allDrugNames);
-    
-    // Step 2: LOCAL KNOWLEDGE — always works, no API needed
-    const localInsight = generateLocalInsight(allDrugNames);
-    console.log('[KG] Local insight length:', localInsight.length);
-    
-    // Step 3: Try to get Supabase-stored drug data (from previous NER)
-    let supabaseDrugs: string[] = [];
-    try {
-      const { data: patient } = await supabase.from('patients').select('id').eq('patient_code', patientCode).single();
-      if (patient) {
-        const { data: sessions } = await supabase
-          .from('sessions')
-          .select('id')
-          .eq('patient_id', patient.id);
-        
-        if (sessions && sessions.length > 0) {
-          const sessionIds = sessions.map(s => s.id);
-          const { data: records } = await supabase
-            .from('records')
-            .select('drugs')
-            .in('session_id', sessionIds)
-            .not('drugs', 'is', null)
-            .limit(5);
-          
-          if (records) {
-            for (const r of records) {
-              if (Array.isArray(r.drugs)) {
-                supabaseDrugs.push(...r.drugs);
-              }
-            }
-          }
+    // 4. Synthesize with Gemini using strictly DB matches (no fallbacks)
+    const systemPrompt = `You are a Senior Clinical Diagnostician and Medical Ontologist. 
+You are given the current patient's clinical data and up to 3 mathematically similar historical vectors.
+Your task is to act as a Knowledge Graph reasoning engine.
+Do NOT just summarize the data or give generic medical advice.
+DO:
+1. Identify the exact intersecting medical ontology (e.g. shared drug classes, intersecting symptoms, or similar risk factors) between the current patient and historical matches.
+2. State concretely if the historical data points to a specific undetected diagnosis or disease progression.
+3. Be highly technical, concise, use RxNorm/SNOMED-styled clinical terms, and keep it under 3 sentences. Provide a direct, actionable clinical deduction.`;
+
+    const geminiPayload = {
+      contents: [
+        {
+          role: 'user',
+          parts: [
+            { text: `CURRENT PATIENT DATA:\n${localDataString}\n\nSIMILAR HISTORICAL CASES:\n${matchesString}` }
+          ]
         }
+      ],
+      systemInstruction: {
+        parts: [{ text: systemPrompt }]
+      },
+      generationConfig: {
+        temperature: 0.2,
+        maxOutputTokens: 8192
       }
-    } catch (e) {
-      console.log('[KG] Supabase drug lookup skipped:', (e as any)?.message);
+    };
+
+    const GEMINI_URL = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${GEMINI_API_KEY}`;
+    
+    console.log('[KG] Asking Gemini to synthesize insights...');
+    
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 60000);
+
+    const res = await fetch(GEMINI_URL, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      signal: controller.signal,
+      body: JSON.stringify(geminiPayload)
+    });
+    
+    clearTimeout(timeoutId);
+
+    if (!res.ok) {
+      const errText = await res.text();
+      console.error('[KG] Gemini API HTTP error:', res.status, errText);
+      return null;
     }
+
+    const geminiData = await res.json();
     
-    // Merge all drug sources
-    const allDrugs = [...new Set([...allDrugNames, ...supabaseDrugs])];
-    console.log('[KG] Total drugs for analysis:', allDrugs);
-    
-    // Step 4: Get FDA data for the combined drug list (if any real drugs)
-    const realDrugs = allDrugs.filter(d => 
-      d.length > 3 && 
-      !/médicament|medicament|unknown/i.test(d)
-    ).slice(0, 3);
-    
-    const fdaData = realDrugs.length > 0 ? await getDrugSafetyData(realDrugs) : '';
-    
-    // Step 5: Build the final insight — local knowledge FIRST, FDA as enrichment
-    const parts: string[] = [];
-    
-    if (localInsight.length > 0) {
-      parts.push(localInsight);
+    // Log the full response if insight is missing
+    if (!geminiData?.candidates?.[0]?.content?.parts?.[0]?.text) {
+      console.log('[KG] Unexpected Gemini response:', JSON.stringify(geminiData, null, 2));
     }
-    
-    if (fdaData.length > 0) {
-      parts.push('');
-      parts.push('FDA Alerts:');
-      parts.push(fdaData);
+
+    const insightText = geminiData?.candidates?.[0]?.content?.parts?.[0]?.text?.trim();
+
+    console.log('[KG] Gemini insight returned:', insightText);
+
+    if (!insightText) {
+      return null;
     }
-    
-    // If we have SOMETHING to show, return it
-    if (parts.length > 0) {
-      return parts.join('\n');
-    }
-    
-    // Truly nothing — no drugs found at all
-    return '';
-    
+
+    const finalResult = {
+      insightText: "Second Brain:\n" + insightText,
+      matches: formattedMatches
+    };
+
+    // Save to cache
+    await AsyncStorage.setItem(CACHE_KEY, JSON.stringify(finalResult));
+
+    return finalResult;
+
   } catch (e: any) {
-    console.error('[KG CATCH] typeof e:', typeof e);
-    console.error('[KG CATCH] e.message:', e?.message);
-    return '';
+    console.error('[KG CATCH] error in getClinicalInsights:', e?.message);
+    return null;
   }
 }
 
@@ -854,11 +1065,12 @@ async function fetchTreeOnline(patientCode: string) {
       .from('patients')
       .select('id')
       .eq('patient_code', patientCode)
-      .single()
-    
-    if (!patient) return { problemTree: [], pendingVerifications: [] }
+      .maybeSingle();
 
-    // 1. Fetch sessions
+    if (!patient) {
+      return { problemTree: [], pendingVerifications: [] };
+    }
+
     const { data: sessions, error: sessionErr } = await supabase
       .from('sessions')
       .select('*')

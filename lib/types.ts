@@ -43,6 +43,7 @@ export interface SyncQueueItem {
   action: SyncAction;
   retry_count: number;
   last_attempt: string | null;
+  next_retry_at?: string | null;
   status: SyncQueueStatus;
 }
 

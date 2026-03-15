@@ -41,7 +41,7 @@ async function lookupPatientOnline(code: string): Promise<Patient | null> {
       .from('patients')
       .select('id, patient_code, full_name, date_of_birth, gender')
       .eq('patient_code', code)
-      .single();
+      .maybeSingle();
 
     if (error || !data) {
       // Not found in cloud — check local cache as fallback

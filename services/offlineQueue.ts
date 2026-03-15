@@ -85,9 +85,10 @@ export async function getQueueItems(): Promise<SyncQueueItem[]> {
   const db = getDatabase();
   return db.getAllAsync<SyncQueueItem>(
     `SELECT * FROM sync_queue
-     WHERE status IN ('pending', 'in_progress')
+     WHERE status = 'in_progress'
+        OR (status = 'pending' AND (next_retry_at IS NULL OR next_retry_at <= ?))
      ORDER BY id ASC`,
-    []
+    [new Date().toISOString()]
   );
 }
 
@@ -121,21 +122,22 @@ export async function retryFailedItem(queueId: number): Promise<void> {
 export async function updateQueueItemStatus(
   queueId: number,
   status: 'pending' | 'in_progress' | 'completed' | 'failed',
-  retryCount?: number
+  retryCount?: number,
+  nextRetryAt?: string | null
 ): Promise<void> {
   const db = getDatabase();
   const lastAttempt = new Date().toISOString();
 
   if (retryCount !== undefined) {
     await db.runAsync(
-      `UPDATE sync_queue SET status = ?, retry_count = ?, last_attempt = ?
+      `UPDATE sync_queue SET status = ?, retry_count = ?, last_attempt = ?, next_retry_at = ?
        WHERE id = ?`,
-      [status, retryCount, lastAttempt, queueId]
+      [status, retryCount, lastAttempt, nextRetryAt ?? null, queueId]
     );
   } else {
     await db.runAsync(
-      `UPDATE sync_queue SET status = ?, last_attempt = ? WHERE id = ?`,
-      [status, lastAttempt, queueId]
+      `UPDATE sync_queue SET status = ?, last_attempt = ?, next_retry_at = ? WHERE id = ?`,
+      [status, lastAttempt, nextRetryAt ?? null, queueId]
     );
   }
 }

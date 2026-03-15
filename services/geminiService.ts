@@ -14,6 +14,33 @@ const GEMINI_API_KEY = process.env.EXPO_PUBLIC_GEMINI_API_KEY;
 
 import type { ExtractionResult } from '../lib/types';
 
+export class GeminiRateLimitError extends Error {
+  readonly status = 429;
+  readonly retryAfterSeconds: number;
+
+  constructor(message: string, retryAfterSeconds = 15) {
+    super(message);
+    this.name = 'GeminiRateLimitError';
+    this.retryAfterSeconds = retryAfterSeconds;
+  }
+}
+
+function parseRetryAfterSeconds(errorText: string, response: Response): number {
+  const header = response.headers.get('retry-after');
+  if (header) {
+    const parsed = Number.parseInt(header, 10);
+    if (Number.isFinite(parsed) && parsed > 0) return parsed;
+  }
+
+  const match = errorText.match(/"retryDelay"\s*:\s*"(\d+)s"/i);
+  if (match?.[1]) {
+    const parsed = Number.parseInt(match[1], 10);
+    if (Number.isFinite(parsed) && parsed > 0) return parsed;
+  }
+
+  return 15;
+}
+
 /**
  * Extracts handwriting from a local image file directly using the Gemini REST API.
  * 
@@ -82,6 +109,12 @@ export async function extractHandwritingFromBase64(imageUri: string): Promise<Ex
     if (!response.ok) {
       const errorText = await response.text();
       console.error('[geminiService] Gemini API HTTP error:', response.status, errorText);
+      if (response.status === 429) {
+        throw new GeminiRateLimitError(
+          `[geminiService] Gemini API rate-limited (429)`,
+          parseRetryAfterSeconds(errorText, response)
+        );
+      }
       throw new Error(`[geminiService] Gemini API error (${response.status})`);
     }
 
