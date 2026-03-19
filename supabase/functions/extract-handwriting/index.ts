@@ -73,7 +73,7 @@ function toStoragePath(imageUrl: string): string {
   // Expected fragment: /storage/v1/object/public/scan-images/<path>
   const marker = '/storage/v1/object/public/scan-images/';
   const idx = imageUrl.indexOf(marker);
-  if (idx === -1) return imageUrl;
+  if (idx === -1) return '';
   return decodeURIComponent(imageUrl.substring(idx + marker.length));
 }
 
@@ -134,7 +134,7 @@ Deno.serve(async (req: Request) => {
 
     if (!storagePath) {
       return new Response(
-        JSON.stringify({ error: 'No image path for this record' }),
+        JSON.stringify({ error: 'Invalid or unsupported image URL format for this record' }),
         { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
       );
     }

@@ -1,4 +1,3 @@
-// @ts-nocheck
 import { serve } from 'https://deno.land/std@0.177.0/http/server.ts';
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
 
@@ -23,6 +22,15 @@ RULES:
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
   'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
+};
+
+type RecordRow = {
+  id: string;
+  extracted_data: unknown;
+  doctor_corrections: unknown;
+  status: string;
+  created_at: string;
+  session_id: string;
 };
 
 function jsonResponse(body: Record<string, unknown>, status = 200) {
@@ -116,9 +124,13 @@ serve(async (req: Request) => {
       .eq('id', user.id)
       .single();
 
-    const doctorProfile = doctorErr || !doctor
-      ? { id: user.id, clinic_id: patient.clinic_id ?? null }
-      : doctor;
+    if (doctorErr || !doctor) {
+      return jsonResponse({ error: 'Forbidden: a valid doctor profile is required' }, 403);
+    }
+
+    if (patient.clinic_id && doctor.clinic_id && patient.clinic_id !== doctor.clinic_id) {
+      return jsonResponse({ error: 'Access denied: patient belongs to a different clinic' }, 403);
+    }
 
     let persistenceEnabled = true;
     const { error: chatTableProbeError } = await supabaseService
@@ -129,15 +141,6 @@ serve(async (req: Request) => {
     if (chatTableProbeError) {
       persistenceEnabled = false;
       console.warn('[ai-chat-patient] ai_conversations unavailable, using stateless mode:', chatTableProbeError.message);
-    }
-
-    if (!doctor || doctorErr) {
-      persistenceEnabled = false;
-      console.warn('[ai-chat-patient] Doctor profile missing, using stateless mode for chat.');
-    }
-
-    if (patient.clinic_id && doctorProfile.clinic_id && patient.clinic_id !== doctorProfile.clinic_id) {
-      return jsonResponse({ error: 'Access denied: patient belongs to a different clinic' }, 403);
     }
 
     let activeConversationId = conversation_id ?? `ephemeral-${patient_id}`;
@@ -159,7 +162,7 @@ serve(async (req: Request) => {
       const { data: newConv, error: newConvErr } = await supabaseService
         .from('ai_conversations')
         .insert({
-          clinic_id: doctorProfile.clinic_id,
+          clinic_id: doctor.clinic_id,
           patient_id,
           doctor_id: user.id,
           title,
@@ -181,46 +184,52 @@ serve(async (req: Request) => {
       });
     }
 
-    const { data: records } = await supabaseService
-      .from('records')
-      .select('id, extracted_data, doctor_corrections, status, created_at, session_id')
-      .in('session_id',
-        (await supabaseService
-          .from('sessions')
-          .select('id')
-          .eq('patient_id', patient_id)
-        ).data?.map((s: { id: string }) => s.id) ?? []
-      )
-      .in('status', ['approved', 'needs_review'])
-      .order('created_at', { ascending: false })
-      .limit(MAX_RECORDS);
+    const { data: sessions, error: sessionsErr } = await supabaseService
+      .from('sessions')
+      .select('id')
+      .eq('patient_id', patient_id);
+
+    if (sessionsErr) {
+      return jsonResponse({ error: 'Failed to fetch patient sessions' }, 500);
+    }
+
+    const sessionIds = (sessions ?? []).map((s: { id: string }) => s.id);
+
+    let records: RecordRow[] = [];
+
+    if (sessionIds.length > 0) {
+      const { data: fetchedRecords, error: recordsErr } = await supabaseService
+        .from('records')
+        .select('id, extracted_data, doctor_corrections, status, created_at, session_id')
+        .in('session_id', sessionIds)
+        .in('status', ['approved', 'needs_review'])
+        .order('created_at', { ascending: false })
+        .limit(MAX_RECORDS);
+
+      if (recordsErr) {
+        return jsonResponse({ error: 'Failed to fetch patient records' }, 500);
+      }
+
+      records = fetchedRecords ?? [];
+    }
 
     const queryTokens = message
       .toLowerCase()
       .split(/[\s,.;:!?]+/)
       .filter((t: string) => t.length > 2);
 
-    type RecordRow = {
-      id: string;
-      extracted_data: unknown;
-      doctor_corrections: unknown;
-      status: string;
-      created_at: string;
-      session_id: string;
-    };
-
-    const enriched = (records ?? []).map((r: RecordRow) => ({
+    const enriched = records.map((r) => ({
       ...r,
       text: canonicalText(r),
     }));
 
     const scored = enriched
-      .filter((r: { text: string }) => r.text.length > 0)
-      .map((r: { text: string; id: string }) => ({
+      .filter((r) => r.text.length > 0)
+      .map((r) => ({
         ...r,
         relevance: scoreRelevance(r.text, queryTokens),
       }))
-      .sort((a: { relevance: number }, b: { relevance: number }) => b.relevance - a.relevance);
+      .sort((a, b) => b.relevance - a.relevance);
 
     let context = '';
     const usedRecordIds: string[] = [];
