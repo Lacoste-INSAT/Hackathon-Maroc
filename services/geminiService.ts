@@ -80,16 +80,30 @@ export async function extractHandwritingFromBase64(imageUri: string): Promise<Ex
     let lastBody = '';
 
     for (let attempt = 1; attempt <= MAX_RETRIES; attempt++) {
-      const response = await fetch(
-        `https://generativelanguage.googleapis.com/v1beta/models/${GEMINI_PRIMARY_MODEL}:generateContent?key=${GEMINI_API_KEY}`,
-        {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-          },
-          body: JSON.stringify(payload)
+      let response: Response;
+      try {
+        response = await fetch(
+          `https://generativelanguage.googleapis.com/v1beta/models/${GEMINI_PRIMARY_MODEL}:generateContent?key=${GEMINI_API_KEY}`,
+          {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+            },
+            body: JSON.stringify(payload)
+          }
+        );
+      } catch (networkError) {
+        lastBody = networkError instanceof Error ? networkError.message : String(networkError);
+        console.warn(
+          `[geminiService] Network error (attempt ${attempt}/${MAX_RETRIES}):`,
+          lastBody
+        );
+        if (attempt === MAX_RETRIES) {
+          throw new Error(`[geminiService] Network error after ${MAX_RETRIES} attempts: ${lastBody}`);
         }
-      );
+        await sleep(1500 * Math.pow(2, attempt - 1));
+        continue;
+      }
 
       if (response.ok) {
         data = await response.json();
