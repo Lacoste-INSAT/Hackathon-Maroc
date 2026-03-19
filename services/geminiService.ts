@@ -16,6 +16,7 @@ import type { ExtractionResult } from '../lib/types';
 
 const GEMINI_PRIMARY_MODEL = 'gemini-2.5-flash';
 const MAX_RETRIES = 3;
+const BASE_RETRY_DELAY_MS = 1500;
 
 function sleep(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
@@ -101,7 +102,7 @@ export async function extractHandwritingFromBase64(imageUri: string): Promise<Ex
         if (attempt === MAX_RETRIES) {
           throw new Error(`[geminiService] Network error after ${MAX_RETRIES} attempts: ${lastBody}`);
         }
-        await sleep(1500 * Math.pow(2, attempt - 1));
+        await sleep(BASE_RETRY_DELAY_MS * Math.pow(2, attempt - 1));
         continue;
       }
 
@@ -126,7 +127,7 @@ export async function extractHandwritingFromBase64(imageUri: string): Promise<Ex
       }
 
       // Exponential backoff: 1.5s, 3s, 6s
-      await sleep(1500 * Math.pow(2, attempt - 1));
+      await sleep(BASE_RETRY_DELAY_MS * Math.pow(2, attempt - 1));
     }
 
     if (!data) {
