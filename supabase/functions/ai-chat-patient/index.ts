@@ -149,22 +149,29 @@ serve(async (req: Request) => {
         return jsonResponse({ error: 'Conversation not found or access denied' }, 404);
       }
     } else if (persistenceEnabled) {
-      const title = message.trim().substring(0, 80);
-      const { data: newConv, error: newConvErr } = await supabaseService
-        .from('ai_conversations')
-        .insert({
-          clinic_id: doctor.clinic_id,
-          patient_id,
-          doctor_id: user.id,
-          title,
-        })
-        .select('id')
-        .single();
+      // If the doctor does not have a clinic_id, we cannot persist the conversation
+      // because ai_conversations.clinic_id is NOT NULL. Fall back to stateless mode.
+      if (!doctor || !doctor.clinic_id) {
+        console.warn('[ai-chat-patient] doctor.clinic_id missing, falling back to stateless mode');
+        persistenceEnabled = false;
+      } else {
+        const title = message.trim().substring(0, 80);
+        const { data: newConv, error: newConvErr } = await supabaseService
+          .from('ai_conversations')
+          .insert({
+            clinic_id: doctor.clinic_id,
+            patient_id,
+            doctor_id: user.id,
+            title,
+          })
+          .select('id')
+          .single();
 
-      if (newConvErr || !newConv) {
-        return jsonResponse({ error: 'Failed to create conversation' }, 500);
+        if (newConvErr || !newConv) {
+          return jsonResponse({ error: 'Failed to create conversation' }, 500);
+        }
+        activeConversationId = newConv.id;
       }
-      activeConversationId = newConv.id;
     }
 
     if (persistenceEnabled) {
