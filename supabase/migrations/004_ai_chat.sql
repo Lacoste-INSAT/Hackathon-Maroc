@@ -52,6 +52,7 @@ CREATE POLICY "Doctors can insert own conversations"
   WITH CHECK (
     doctor_id = auth.uid()
     AND clinic_id IN (SELECT clinic_id FROM doctors WHERE id = auth.uid())
+    AND EXISTS (SELECT 1 FROM patients p WHERE p.id = patient_id AND p.clinic_id = clinic_id)
   );
 
 CREATE POLICY "Doctors can update own conversations"

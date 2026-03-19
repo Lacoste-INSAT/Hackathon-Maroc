@@ -1,4 +1,6 @@
 import { supabase } from '@/lib/supabase';
+import { selectTopK } from '@/lib/contextSelector';
+import type { ContextRecord } from '@/lib/contextSelector';
 import type { AIConversation, AIMessage, AIChatResponse } from '@/lib/types';
 
 const GEMINI_API_KEY = process.env.EXPO_PUBLIC_GEMINI_API_KEY;
@@ -35,15 +37,6 @@ function canonicalText(record: { extracted_data: unknown; doctor_corrections: un
   } catch {
     return String(source);
   }
-}
-
-function scoreRelevance(text: string, queryTokens: string[]): number {
-  const lower = text.toLowerCase();
-  let score = 0;
-  for (const token of queryTokens) {
-    if (lower.includes(token)) score++;
-  }
-  return score;
 }
 
 async function readFunctionError(error: unknown): Promise<string> {
@@ -108,37 +101,18 @@ async function sendMessageDirectGemini(patientId: string, message: string): Prom
     records = fetchedRecords ?? [];
   }
 
-  const queryTokens = message
-    .toLowerCase()
-    .split(/[\s,.;:!?]+/)
-    .filter((t: string) => t.length > 2);
-
-  const enriched = records.map((r) => ({
-    ...r,
+  const contextRecords: ContextRecord[] = records.map((r) => ({
+    id: r.id,
     text: canonicalText(r),
+    created_at: r.created_at,
   }));
 
-  const scored = enriched
-    .filter((r) => r.text.length > 0)
-    .map((r) => ({
-      ...r,
-      relevance: scoreRelevance(r.text, queryTokens),
-    }))
-    .sort((a, b) => b.relevance - a.relevance);
+  const { selected, context: rawContext } = selectTopK(contextRecords, message, MAX_CONTEXT_CHARS);
+  const usedRecordIds = selected.map((r) => r.id);
 
-  let context = '';
-  const usedRecordIds: string[] = [];
-
-  for (const rec of scored) {
-    const chunk = `[Record ${rec.id} | ${rec.created_at}]\n${rec.text}\n\n`;
-    if (context.length + chunk.length > MAX_CONTEXT_CHARS) break;
-    context += chunk;
-    usedRecordIds.push(rec.id);
-  }
-
-  if (context.length === 0) {
-    context = 'NO RECORDS AVAILABLE — The patient file is empty or contains no extractable data.';
-  }
+  const context = rawContext.length > 0
+    ? rawContext
+    : 'NO RECORDS AVAILABLE — The patient file is empty or contains no extractable data.';
 
   const response = await fetch(GEMINI_CHAT_URL, {
     method: 'POST',

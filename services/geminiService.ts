@@ -16,6 +16,7 @@ import type { ExtractionResult } from '../lib/types';
 
 const GEMINI_PRIMARY_MODEL = 'gemini-2.5-flash';
 const MAX_RETRIES = 3;
+const BASE_RETRY_DELAY_MS = 1500;
 
 function sleep(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
@@ -80,16 +81,30 @@ export async function extractHandwritingFromBase64(imageUri: string): Promise<Ex
     let lastBody = '';
 
     for (let attempt = 1; attempt <= MAX_RETRIES; attempt++) {
-      const response = await fetch(
-        `https://generativelanguage.googleapis.com/v1beta/models/${GEMINI_PRIMARY_MODEL}:generateContent?key=${GEMINI_API_KEY}`,
-        {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-          },
-          body: JSON.stringify(payload)
+      let response: Response;
+      try {
+        response = await fetch(
+          `https://generativelanguage.googleapis.com/v1beta/models/${GEMINI_PRIMARY_MODEL}:generateContent?key=${GEMINI_API_KEY}`,
+          {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+            },
+            body: JSON.stringify(payload)
+          }
+        );
+      } catch (networkError) {
+        lastBody = networkError instanceof Error ? networkError.message : String(networkError);
+        console.warn(
+          `[geminiService] Network error (attempt ${attempt}/${MAX_RETRIES}):`,
+          lastBody
+        );
+        if (attempt === MAX_RETRIES) {
+          throw new Error(`[geminiService] Network error after ${MAX_RETRIES} attempts: ${lastBody}`);
         }
-      );
+        await sleep(BASE_RETRY_DELAY_MS * Math.pow(2, attempt - 1));
+        continue;
+      }
 
       if (response.ok) {
         data = await response.json();
@@ -112,7 +127,7 @@ export async function extractHandwritingFromBase64(imageUri: string): Promise<Ex
       }
 
       // Exponential backoff: 1.5s, 3s, 6s
-      await sleep(1500 * Math.pow(2, attempt - 1));
+      await sleep(BASE_RETRY_DELAY_MS * Math.pow(2, attempt - 1));
     }
 
     if (!data) {

@@ -253,7 +253,9 @@ async function processItem(item: SyncQueueItem, db: any): Promise<void> {
     if (cloudRecord.extracted_data && typeof cloudRecord.overall_confidence === 'number') {
       await updateRecordExtraction(
         record.id,
-        cloudRecord.extracted_data,
+        typeof cloudRecord.extracted_data === 'string'
+          ? cloudRecord.extracted_data
+          : JSON.stringify(cloudRecord.extracted_data),
         cloudRecord.overall_confidence,
         cloudRecord.flagged_reason ?? null
       );

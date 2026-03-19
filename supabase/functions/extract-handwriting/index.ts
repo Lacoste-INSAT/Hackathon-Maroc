@@ -73,7 +73,11 @@ function toStoragePath(imageUrl: string): string {
   // Expected fragment: /storage/v1/object/public/scan-images/<path>
   const marker = '/storage/v1/object/public/scan-images/';
   const idx = imageUrl.indexOf(marker);
-  if (idx === -1) return imageUrl;
+  if (idx === -1) {
+    // URL does not match any known Supabase storage format; return empty string
+    // so the caller can return a clear 400 rather than passing a raw URL to storage.download().
+    return '';
+  }
   return decodeURIComponent(imageUrl.substring(idx + marker.length));
 }
 

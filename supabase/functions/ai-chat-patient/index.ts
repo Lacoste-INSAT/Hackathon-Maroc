@@ -1,4 +1,3 @@
-// @ts-nocheck
 import { serve } from 'https://deno.land/std@0.177.0/http/server.ts';
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
 
@@ -116,9 +115,17 @@ serve(async (req: Request) => {
       .eq('id', user.id)
       .single();
 
-    const doctorProfile = doctorErr || !doctor
-      ? { id: user.id, clinic_id: patient.clinic_id ?? null }
-      : doctor;
+    if (doctorErr || !doctor) {
+      return jsonResponse({ error: 'Access denied: no doctor profile found for this user' }, 403);
+    }
+
+    if (!patient.clinic_id || !doctor.clinic_id) {
+      return jsonResponse({ error: 'Access denied: missing clinic association for doctor or patient' }, 403);
+    }
+
+    if (patient.clinic_id !== doctor.clinic_id) {
+      return jsonResponse({ error: 'Access denied: patient belongs to a different clinic' }, 403);
+    }
 
     let persistenceEnabled = true;
     const { error: chatTableProbeError } = await supabaseService
@@ -129,15 +136,6 @@ serve(async (req: Request) => {
     if (chatTableProbeError) {
       persistenceEnabled = false;
       console.warn('[ai-chat-patient] ai_conversations unavailable, using stateless mode:', chatTableProbeError.message);
-    }
-
-    if (!doctor || doctorErr) {
-      persistenceEnabled = false;
-      console.warn('[ai-chat-patient] Doctor profile missing, using stateless mode for chat.');
-    }
-
-    if (patient.clinic_id && doctorProfile.clinic_id && patient.clinic_id !== doctorProfile.clinic_id) {
-      return jsonResponse({ error: 'Access denied: patient belongs to a different clinic' }, 403);
     }
 
     let activeConversationId = conversation_id ?? `ephemeral-${patient_id}`;
@@ -155,22 +153,29 @@ serve(async (req: Request) => {
         return jsonResponse({ error: 'Conversation not found or access denied' }, 404);
       }
     } else if (persistenceEnabled) {
-      const title = message.trim().substring(0, 80);
-      const { data: newConv, error: newConvErr } = await supabaseService
-        .from('ai_conversations')
-        .insert({
-          clinic_id: doctorProfile.clinic_id,
-          patient_id,
-          doctor_id: user.id,
-          title,
-        })
-        .select('id')
-        .single();
+      // If the doctor does not have a clinic_id, we cannot persist the conversation
+      // because ai_conversations.clinic_id is NOT NULL. Fall back to stateless mode.
+      if (!doctor || !doctor.clinic_id) {
+        console.warn('[ai-chat-patient] doctor.clinic_id missing, falling back to stateless mode');
+        persistenceEnabled = false;
+      } else {
+        const title = message.trim().substring(0, 80);
+        const { data: newConv, error: newConvErr } = await supabaseService
+          .from('ai_conversations')
+          .insert({
+            clinic_id: doctor.clinic_id,
+            patient_id,
+            doctor_id: user.id,
+            title,
+          })
+          .select('id')
+          .single();
 
-      if (newConvErr || !newConv) {
-        return jsonResponse({ error: 'Failed to create conversation' }, 500);
+        if (newConvErr || !newConv) {
+          return jsonResponse({ error: 'Failed to create conversation' }, 500);
+        }
+        activeConversationId = newConv.id;
       }
-      activeConversationId = newConv.id;
     }
 
     if (persistenceEnabled) {
@@ -181,25 +186,6 @@ serve(async (req: Request) => {
       });
     }
 
-    const { data: records } = await supabaseService
-      .from('records')
-      .select('id, extracted_data, doctor_corrections, status, created_at, session_id')
-      .in('session_id',
-        (await supabaseService
-          .from('sessions')
-          .select('id')
-          .eq('patient_id', patient_id)
-        ).data?.map((s: { id: string }) => s.id) ?? []
-      )
-      .in('status', ['approved', 'needs_review'])
-      .order('created_at', { ascending: false })
-      .limit(MAX_RECORDS);
-
-    const queryTokens = message
-      .toLowerCase()
-      .split(/[\s,.;:!?]+/)
-      .filter((t: string) => t.length > 2);
-
     type RecordRow = {
       id: string;
       extracted_data: unknown;
@@ -208,6 +194,42 @@ serve(async (req: Request) => {
       created_at: string;
       session_id: string;
     };
+
+    type SessionRow = { id: string };
+
+    const { data: sessions, error: sessionsErr } = await supabaseService
+      .from('sessions')
+      .select('id')
+      .eq('patient_id', patient_id);
+
+    if (sessionsErr) {
+      return jsonResponse({ error: `Failed to fetch patient sessions: ${sessionsErr.message}` }, 500);
+    }
+
+    const sessionIds = (sessions ?? []).map((s: SessionRow) => s.id);
+
+    let records: RecordRow[] = [];
+
+    if (sessionIds.length > 0) {
+      const { data: fetchedRecords, error: recordsErr } = await supabaseService
+        .from('records')
+        .select('id, extracted_data, doctor_corrections, status, created_at, session_id')
+        .in('session_id', sessionIds)
+        .in('status', ['approved', 'needs_review'])
+        .order('created_at', { ascending: false })
+        .limit(MAX_RECORDS);
+
+      if (recordsErr) {
+        console.warn('[ai-chat-patient] Failed to fetch records:', recordsErr.message);
+      } else {
+        records = fetchedRecords ?? [];
+      }
+    }
+
+    const queryTokens = message
+      .toLowerCase()
+      .split(/[\s,.;:!?]+/)
+      .filter((t: string) => t.length > 2);
 
     const enriched = (records ?? []).map((r: RecordRow) => ({
       ...r,
