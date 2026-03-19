@@ -119,7 +119,11 @@ serve(async (req: Request) => {
       return jsonResponse({ error: 'Access denied: no doctor profile found for this user' }, 403);
     }
 
-    if (patient.clinic_id && doctor.clinic_id && patient.clinic_id !== doctor.clinic_id) {
+    if (!patient.clinic_id || !doctor.clinic_id) {
+      return jsonResponse({ error: 'Access denied: missing clinic association for doctor or patient' }, 403);
+    }
+
+    if (patient.clinic_id !== doctor.clinic_id) {
       return jsonResponse({ error: 'Access denied: patient belongs to a different clinic' }, 403);
     }
 
